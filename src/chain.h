@@ -80,7 +80,13 @@ struct Chain {
     Chain();
 
     int index_of(int id) const;
-    int add(OpParams params);
+
+    // Id do estágio que serve de entrada k, ou -1 se nenhum serve. `prefer` é
+    // tentado primeiro, pra operação nova pendurar no que está sendo olhado.
+    int find_input(const OpInfo& info, int k, int prefer_id) const;
+    bool can_add(const OpParams& params) const;
+
+    int add(OpParams params, int prefer_id = -1);
     void remove(int id);
     void evaluate(const Image& source);
 };

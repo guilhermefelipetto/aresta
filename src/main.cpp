@@ -21,6 +21,59 @@
 #include "kernel_window.h"
 #include "ui.h"
 
+namespace {
+
+// Uma lista só, servindo o menu do topo e o botão do painel, pra os dois não
+// divergirem quando entrar operação nova.
+bool draw_operation_items(App& app) {
+    struct Entry {
+        const char* label;
+        OpParams params;
+        const char* needs;
+    };
+
+    const Entry entries[] = {
+        {"exposição", ExposureOp{}, "um estágio de cor"},
+        {"contraste", ContrastOp{}, "um estágio de cor"},
+        {"gama", GammaOp{}, "um estágio de cor"},
+        {"inverter", InvertOp{}, "um estágio de cor"},
+        {nullptr, SourceOp{}, nullptr},
+        {"convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
+        {"equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
+        {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
+        {nullptr, SourceOp{}, nullptr},
+        {"luminância", LuminanceOp{}, "um estágio de cor"},
+        {"threshold", ThresholdOp{}, "um estágio escalar, tipo luminância"},
+        {"morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
+        {"componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
+        {"overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
+    };
+
+    const int viewed_id = (app.viewed >= 0 &&
+                           app.viewed < static_cast<int>(app.chain.stages.size()))
+                              ? app.chain.stages[app.viewed].id
+                              : -1;
+
+    bool added = false;
+    for (const Entry& entry : entries) {
+        if (!entry.label) {
+            ImGui::Separator();
+            continue;
+        }
+        const bool ready = app.chain.can_add(entry.params);
+        if (ImGui::MenuItem(entry.label, nullptr, false, ready)) {
+            app.viewed = app.chain.index_of(app.chain.add(entry.params, viewed_id));
+            added = true;
+        }
+        if (!ready && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("precisa de %s antes", entry.needs);
+        }
+    }
+    return added;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "SDL_Init falhou: %s\n", SDL_GetError());
@@ -92,6 +145,7 @@ int main(int argc, char** argv) {
 
     char path_input[1024] = {};
     bool open_requested = false;
+    bool chain_dirty = false;
     bool rodando = true;
 
     while (rodando) {
@@ -143,6 +197,14 @@ int main(int argc, char** argv) {
                 if (ImGui::MenuItem("Tamanho real", "1", false, app.texture.valid())) {
                     canvas_zoom_to(app.canvas, 1.0f);
                 }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Operações")) {
+                ImGui::BeginDisabled(app.source.empty());
+                if (draw_operation_items(app)) {
+                    chain_dirty = true;
+                }
+                ImGui::EndDisabled();
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Ferramentas")) {
@@ -281,25 +343,16 @@ int main(int argc, char** argv) {
         if (app.source.empty()) {
             ImGui::TextDisabled("Nenhuma imagem.");
         } else {
-            bool dirty = false;
+            bool dirty = chain_dirty;
+            chain_dirty = false;
 
             if (ImGui::Button("Adicionar operação", ImVec2(-1.0f, 0.0f))) {
                 ImGui::OpenPopup("adicionar");
             }
             if (ImGui::BeginPopup("adicionar")) {
-                if (ImGui::MenuItem("exposição")) { app.chain.add(ExposureOp{}); dirty = true; }
-                if (ImGui::MenuItem("contraste")) { app.chain.add(ContrastOp{}); dirty = true; }
-                if (ImGui::MenuItem("gama")) { app.chain.add(GammaOp{}); dirty = true; }
-                if (ImGui::MenuItem("inverter")) { app.chain.add(InvertOp{}); dirty = true; }
-                ImGui::Separator();
-                if (ImGui::MenuItem("equalizar")) { app.chain.add(EqualizeOp{}); dirty = true; }
-                if (ImGui::MenuItem("alongar")) { app.chain.add(StretchOp{}); dirty = true; }
-                ImGui::Separator();
-                if (ImGui::MenuItem("luminância")) { app.chain.add(LuminanceOp{}); dirty = true; }
-                if (ImGui::MenuItem("threshold")) { app.chain.add(ThresholdOp{}); dirty = true; }
-                if (ImGui::MenuItem("morfologia")) { app.chain.add(MorphologyOp{}); dirty = true; }
-                if (ImGui::MenuItem("componentes")) { app.chain.add(ComponentsOp{}); dirty = true; }
-                if (ImGui::MenuItem("overlay")) { app.chain.add(OverlayOp{}); dirty = true; }
+                if (draw_operation_items(app)) {
+                    dirty = true;
+                }
                 ImGui::EndPopup();
             }
 
@@ -318,9 +371,13 @@ int main(int argc, char** argv) {
                 char label[160];
                 std::snprintf(label, sizeof(label), "%zu   %-11s -> %s", i, info.name,
                               kind_name(produced));
-                if (ImGui::Selectable(label, app.viewed == static_cast<int>(i))) {
+                const bool is_viewed = app.viewed == static_cast<int>(i);
+                if (ImGui::Selectable(label, is_viewed)) {
                     app.viewed = static_cast<int>(i);
                     app.upload_view();
+                }
+                if (is_viewed && dirty) {
+                    ImGui::SetScrollHereY(0.6f);
                 }
 
                 ImGui::Indent();

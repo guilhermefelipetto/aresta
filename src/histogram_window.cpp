@@ -74,11 +74,7 @@ void add_stage(App& app, OpParams params) {
     const int viewed_id = (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size()))
                               ? app.chain.stages[app.viewed].id
                               : 0;
-    const int id = app.chain.add(std::move(params));
-    const int index = app.chain.index_of(id);
-    if (index >= 0 && !app.chain.stages[index].inputs.empty()) {
-        app.chain.stages[index].inputs[0] = viewed_id;
-    }
+    const int index = app.chain.index_of(app.chain.add(std::move(params), viewed_id));
     app.viewed = index;
     app.evaluate();
 }

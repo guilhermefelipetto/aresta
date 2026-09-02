@@ -90,7 +90,11 @@ void push_to_chain(KernelWindow& window, App& app, bool reuse) {
 
     int index = reuse ? app.chain.index_of(window.live_stage) : -1;
     if (index < 0) {
-        window.live_stage = app.chain.add(current_op(window));
+        const int viewed_id = app.viewed >= 0 &&
+                                      app.viewed < static_cast<int>(app.chain.stages.size())
+                                  ? app.chain.stages[app.viewed].id
+                                  : -1;
+        window.live_stage = app.chain.add(current_op(window), viewed_id);
         index = app.chain.index_of(window.live_stage);
     } else {
         app.chain.stages[index].params = current_op(window);

@@ -163,26 +163,45 @@ int Chain::index_of(int id) const {
     return -1;
 }
 
-int Chain::add(OpParams params) {
+int Chain::find_input(const OpInfo& info, int k, int prefer_id) const {
+    const auto serves = [&](const Stage& candidate) {
+        const ValueKind produced = op_info(candidate.params).output;
+        return (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
+                                         : (produced == info.inputs[k]);
+    };
+
+    if (prefer_id >= 0) {
+        const int index = index_of(prefer_id);
+        if (index >= 0 && serves(stages[index])) {
+            return prefer_id;
+        }
+    }
+    for (int i = static_cast<int>(stages.size()) - 1; i >= 0; --i) {
+        if (serves(stages[i])) {
+            return stages[i].id;
+        }
+    }
+    return -1;
+}
+
+bool Chain::can_add(const OpParams& params) const {
+    const OpInfo info = op_info(params);
+    for (int k = 0; k < info.input_count; ++k) {
+        if (find_input(info, k, -1) < 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int Chain::add(OpParams params, int prefer_id) {
     Stage stage;
     stage.id = next_id++;
     stage.params = std::move(params);
 
     const OpInfo info = op_info(stage.params);
-    // Liga por padrão no último estágio cujo tipo bate; é quase sempre o que a
-    // pessoa queria, e quando não é, o combo está ali do lado.
     for (int k = 0; k < info.input_count; ++k) {
-        int chosen = 0;
-        for (int i = static_cast<int>(stages.size()) - 1; i >= 0; --i) {
-            const ValueKind produced = op_info(stages[i].params).output;
-            const bool serve = (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
-                                                         : (produced == info.inputs[k]);
-            if (serve) {
-                chosen = stages[i].id;
-                break;
-            }
-        }
-        stage.inputs.push_back(chosen);
+        stage.inputs.push_back(find_input(info, k, prefer_id));
     }
 
     stages.push_back(std::move(stage));
