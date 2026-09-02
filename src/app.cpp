@@ -1,10 +1,6 @@
 #include "app.h"
 
-#include <algorithm>
-#include <limits>
 #include <utility>
-
-#include "ops.h"
 
 bool App::open(const std::string& file) {
     std::string error;
@@ -17,42 +13,33 @@ bool App::open(const std::string& file) {
     source = std::move(loaded);
     path = file;
     status.clear();
-    reset_adjustments();
+    chain = Chain();
+    viewed = 0;
     canvas.needs_fit = true;
-    reapply();
+    evaluate();
     return true;
 }
 
-void App::reset_adjustments() {
-    exposure = 0.0f;
-    contrast = 0.0f;
-    gamma = 1.0f;
-}
-
-void App::reapply() {
+void App::evaluate() {
     if (source.empty()) {
         return;
     }
+    chain.evaluate(source);
+    upload_view();
+}
 
-    working = source.clone();
-    const ImageView view = working.view();
-    adjust_exposure(view, exposure);
-    adjust_contrast(view, contrast);
-    adjust_gamma(view, gamma);
-
-    const Map<float> luma = working.luma();
-    float lo = std::numeric_limits<float>::max();
-    float hi = std::numeric_limits<float>::lowest();
-    double sum = 0.0;
-    const float* values = luma.data.get();
-    for (std::size_t i = 0; i < luma.count(); ++i) {
-        lo = std::min(lo, values[i]);
-        hi = std::max(hi, values[i]);
-        sum += values[i];
+void App::upload_view() {
+    if (chain.outputs.empty()) {
+        return;
     }
-    luma_min = lo;
-    luma_max = hi;
-    luma_mean = static_cast<float>(sum / static_cast<double>(luma.count()));
+    if (viewed < 0 || viewed >= static_cast<int>(chain.outputs.size())) {
+        viewed = 0;
+    }
 
-    upload_rgba8(texture, to_srgb8(working).get(), working.width, working.height);
+    const Value& value = chain.outputs[viewed];
+    if (value.empty()) {
+        return;
+    }
+    upload_rgba8(texture, to_display_rgba8(value, colormap, &view_lo, &view_hi).get(),
+                 value.width(), value.height());
 }

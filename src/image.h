@@ -5,8 +5,7 @@
 
 #include "map.h"
 
-// RGBA intercalado, float32, espaço linear. O stride conta floats, não pixels
-// nem bytes.
+// RGBA intercalado, float32, espaço linear. O stride conta floats, não pixels nem bytes.
 struct ImageView {
     float* data = nullptr;
     int width = 0;

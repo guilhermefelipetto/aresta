@@ -6,6 +6,6 @@
 // denuncia protótipo a três metros de distância.
 void apply_theme();
 
-// Monta o layout de fábrica: ferramentas à esquerda, propriedades à direita,
-// canvas no meio.
+// Monta o layout de fábrica: ferramentas à esquerda, propriedades e cadeia à
+// direita, canvas no meio.
 void build_default_layout(ImGuiID dockspace);

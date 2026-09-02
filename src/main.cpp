@@ -16,6 +16,7 @@
 
 #include "app.h"
 #include "canvas.h"
+#include "chain.h"
 #include "ui.h"
 
 int main(int argc, char** argv) {
@@ -217,23 +218,14 @@ int main(int argc, char** argv) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::TextDisabled("Ajustes");
-
-            bool changed = false;
+            ImGui::TextDisabled("Mapa de cor");
             ImGui::SetNextItemWidth(-1.0f);
-            changed |= ImGui::SliderFloat("##exposicao", &app.exposure, -3.0f, 3.0f, "%.2f EV");
-            ImGui::SetNextItemWidth(-1.0f);
-            changed |= ImGui::SliderFloat("##contraste", &app.contrast, -0.9f, 2.0f, "contraste %.2f");
-            ImGui::SetNextItemWidth(-1.0f);
-            changed |= ImGui::SliderFloat("##gama", &app.gamma, 0.2f, 4.0f, "gama %.2f");
-
-            if (ImGui::Button("Zerar ajustes", ImVec2(-1.0f, 0.0f))) {
-                app.reset_adjustments();
-                changed = true;
+            int colormap = static_cast<int>(app.colormap);
+            if (ImGui::Combo("##colormap", &colormap, "cinza\0viridis\0")) {
+                app.colormap = static_cast<Colormap>(colormap);
+                app.upload_view();
             }
-            if (changed) {
-                app.reapply();
-            }
+            ImGui::TextDisabled("Vale pro estágio escalar.");
         }
         ImGui::End();
 
@@ -256,10 +248,133 @@ int main(int argc, char** argv) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::TextDisabled("Luminância (linear)");
-            ImGui::Text("mín   %.4f", app.luma_min);
-            ImGui::Text("máx   %.4f", app.luma_max);
-            ImGui::Text("média %.4f", app.luma_mean);
+            ImGui::TextDisabled("Estágio exibido");
+            if (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size())) {
+                const OpInfo info = op_info(app.chain.stages[app.viewed].params);
+                ImGui::Text("%d  %s", app.viewed, info.name);
+                ImGui::Text("tipo   %s", kind_name(info.output));
+                if (info.output != ValueKind::Color) {
+                    ImGui::Text("faixa  %.4f .. %.4f", app.view_lo, app.view_hi);
+                }
+            }
+        }
+        ImGui::End();
+
+        ImGui::Begin("Cadeia");
+        if (app.source.empty()) {
+            ImGui::TextDisabled("Nenhuma imagem.");
+        } else {
+            bool dirty = false;
+
+            if (ImGui::Button("Adicionar operação", ImVec2(-1.0f, 0.0f))) {
+                ImGui::OpenPopup("adicionar");
+            }
+            if (ImGui::BeginPopup("adicionar")) {
+                if (ImGui::MenuItem("exposição")) { app.chain.add(ExposureOp{}); dirty = true; }
+                if (ImGui::MenuItem("contraste")) { app.chain.add(ContrastOp{}); dirty = true; }
+                if (ImGui::MenuItem("gama")) { app.chain.add(GammaOp{}); dirty = true; }
+                if (ImGui::MenuItem("inverter")) { app.chain.add(InvertOp{}); dirty = true; }
+                ImGui::Separator();
+                if (ImGui::MenuItem("luminância")) { app.chain.add(LuminanceOp{}); dirty = true; }
+                if (ImGui::MenuItem("threshold")) { app.chain.add(ThresholdOp{}); dirty = true; }
+                if (ImGui::MenuItem("overlay")) { app.chain.add(OverlayOp{}); dirty = true; }
+                ImGui::EndPopup();
+            }
+
+            ImGui::Spacing();
+            int to_remove = -1;
+
+            for (std::size_t i = 0; i < app.chain.stages.size(); ++i) {
+                Stage& stage = app.chain.stages[i];
+                const OpInfo info = op_info(stage.params);
+                ImGui::PushID(stage.id);
+
+                char label[160];
+                std::snprintf(label, sizeof(label), "%zu   %-11s -> %s", i, info.name,
+                              kind_name(info.output));
+                if (ImGui::Selectable(label, app.viewed == static_cast<int>(i))) {
+                    app.viewed = static_cast<int>(i);
+                    app.upload_view();
+                }
+
+                ImGui::Indent();
+
+                for (int k = 0; k < info.input_count; ++k) {
+                    const int current =
+                        (k < static_cast<int>(stage.inputs.size())) ? stage.inputs[k] : -1;
+                    const int current_idx = app.chain.index_of(current);
+                    char preview[96];
+                    if (current_idx >= 0) {
+                        std::snprintf(preview, sizeof(preview), "entrada: %d %s", current_idx,
+                                      op_info(app.chain.stages[current_idx].params).name);
+                    } else {
+                        std::snprintf(preview, sizeof(preview), "entrada: (nada)");
+                    }
+
+                    ImGui::PushID(k);
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (ImGui::BeginCombo("##entrada", preview)) {
+                        for (std::size_t j = 0; j < i; ++j) {
+                            if (op_info(app.chain.stages[j].params).output != info.inputs[k]) {
+                                continue;
+                            }
+                            char option[96];
+                            std::snprintf(option, sizeof(option), "%zu %s", j,
+                                          op_info(app.chain.stages[j].params).name);
+                            if (ImGui::Selectable(option, app.chain.stages[j].id == current)) {
+                                if (k < static_cast<int>(stage.inputs.size())) {
+                                    stage.inputs[k] = app.chain.stages[j].id;
+                                    dirty = true;
+                                }
+                            }
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::SetNextItemWidth(-1.0f);
+                if (auto* op = std::get_if<ExposureOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->stops, -3.0f, 3.0f, "%.2f EV");
+                } else if (auto* op = std::get_if<ContrastOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->amount, -0.9f, 2.0f, "%.2f");
+                } else if (auto* op = std::get_if<GammaOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->gamma, 0.2f, 4.0f, "%.2f");
+                } else if (auto* op = std::get_if<ThresholdOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->level, 0.0f, 1.0f, "%.3f");
+                } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->opacity, 0.0f, 1.0f, "%.2f");
+                }
+
+                if (stage.id != 0) {
+                    if (ImGui::Checkbox("ativo", &stage.enabled)) {
+                        dirty = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("remover")) {
+                        to_remove = stage.id;
+                    }
+                }
+
+                if (!stage.error.empty()) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", stage.error.c_str());
+                }
+
+                ImGui::Unindent();
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+
+            if (to_remove >= 0) {
+                app.chain.remove(to_remove);
+                if (app.viewed >= static_cast<int>(app.chain.stages.size())) {
+                    app.viewed = static_cast<int>(app.chain.stages.size()) - 1;
+                }
+                dirty = true;
+            }
+            if (dirty) {
+                app.evaluate();
+            }
         }
         ImGui::End();
 
