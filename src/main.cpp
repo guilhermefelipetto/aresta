@@ -14,8 +14,8 @@
 // borda da viewport, ainda mora no header interno.
 #include <imgui_internal.h>
 
+#include "app.h"
 #include "canvas.h"
-#include "texture.h"
 #include "ui.h"
 
 int main(int argc, char** argv) {
@@ -63,23 +63,13 @@ int main(int argc, char** argv) {
     // arrastou da última vez.
     bool layout_pending = !std::filesystem::exists(ImGui::GetIO().IniFilename);
 
-    Texture texture;
-    Canvas canvas;
-    std::string current_path;
-    std::string status;
+    App app;
 
-    auto open_path = [&](const std::string& path) {
-        std::string error;
-        Texture loaded = load_image(path, error);
-        if (!loaded.valid()) {
-            status = "Não abriu " + path + ": " + error;
+    auto open_path = [&](const std::string& file) {
+        if (!app.open(file)) {
             return false;
         }
-        texture = std::move(loaded);
-        canvas.needs_fit = true;
-        current_path = path;
-        status.clear();
-        SDL_SetWindowTitle(window, ("aresta — " + path).c_str());
+        SDL_SetWindowTitle(window, ("aresta — " + file).c_str());
         return true;
     };
 
@@ -134,11 +124,11 @@ int main(int argc, char** argv) {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Ver")) {
-                if (ImGui::MenuItem("Enquadrar", "F", false, texture.valid())) {
-                    canvas.needs_fit = true;
+                if (ImGui::MenuItem("Enquadrar", "F", false, app.texture.valid())) {
+                    app.canvas.needs_fit = true;
                 }
-                if (ImGui::MenuItem("Tamanho real", "1", false, texture.valid())) {
-                    canvas_zoom_to(canvas, 1.0f);
+                if (ImGui::MenuItem("Tamanho real", "1", false, app.texture.valid())) {
+                    canvas_zoom_to(app.canvas, 1.0f);
                 }
                 ImGui::EndMenu();
             }
@@ -156,15 +146,15 @@ int main(int argc, char** argv) {
                                         bar_height, ImGuiWindowFlags_NoSavedSettings |
                                                         ImGuiWindowFlags_MenuBar)) {
             if (ImGui::BeginMenuBar()) {
-                if (!status.empty()) {
-                    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", status.c_str());
-                } else if (texture.valid()) {
-                    ImGui::Text("%d x %d", texture.width, texture.height);
+                if (!app.status.empty()) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", app.status.c_str());
+                } else if (app.texture.valid()) {
+                    ImGui::Text("%d x %d", app.texture.width, app.texture.height);
                     ImGui::TextDisabled("|");
-                    ImGui::Text("%.0f%%", canvas.zoom * 100.0f);
-                    if (canvas.hovering) {
+                    ImGui::Text("%.0f%%", app.canvas.zoom * 100.0f);
+                    if (app.canvas.hovering) {
                         ImGui::TextDisabled("|");
-                        ImGui::Text("%d, %d", canvas.hover_x, canvas.hover_y);
+                        ImGui::Text("%d, %d", app.canvas.hover_x, app.canvas.hover_y);
                     }
                 } else {
                     ImGui::TextDisabled("nenhuma imagem aberta");
@@ -196,56 +186,86 @@ int main(int argc, char** argv) {
             }
             ImGui::SameLine();
             if (ImGui::Button("Cancelar")) {
-                status.clear();
+                app.status.clear();
                 ImGui::CloseCurrentPopup();
             }
-            if (!status.empty()) {
-                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", status.c_str());
+            if (!app.status.empty()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", app.status.c_str());
             }
             ImGui::EndPopup();
         }
 
         ImGui::Begin("Ferramentas");
-        if (!texture.valid()) {
+        if (!app.texture.valid()) {
             ImGui::TextDisabled("Nenhuma imagem.");
         } else {
             if (ImGui::Button("Enquadrar", ImVec2(-1.0f, 0.0f))) {
-                canvas.needs_fit = true;
+                app.canvas.needs_fit = true;
             }
             if (ImGui::Button("Tamanho real", ImVec2(-1.0f, 0.0f))) {
-                canvas_zoom_to(canvas, 1.0f);
+                canvas_zoom_to(app.canvas, 1.0f);
             }
             ImGui::Spacing();
-            ImGui::TextUnformatted("Zoom");
-            float percent = canvas.zoom * 100.0f;
+            ImGui::TextDisabled("Zoom");
+            float percent = app.canvas.zoom * 100.0f;
             ImGui::SetNextItemWidth(-1.0f);
             if (ImGui::SliderFloat("##zoom", &percent, 2.0f, 6400.0f, "%.0f%%",
                                    ImGuiSliderFlags_Logarithmic)) {
-                canvas_zoom_to(canvas, percent / 100.0f);
+                canvas_zoom_to(app.canvas, percent / 100.0f);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::TextDisabled("Ajustes");
+
+            bool changed = false;
+            ImGui::SetNextItemWidth(-1.0f);
+            changed |= ImGui::SliderFloat("##exposicao", &app.exposure, -3.0f, 3.0f, "%.2f EV");
+            ImGui::SetNextItemWidth(-1.0f);
+            changed |= ImGui::SliderFloat("##contraste", &app.contrast, -0.9f, 2.0f, "contraste %.2f");
+            ImGui::SetNextItemWidth(-1.0f);
+            changed |= ImGui::SliderFloat("##gama", &app.gamma, 0.2f, 4.0f, "gama %.2f");
+
+            if (ImGui::Button("Zerar ajustes", ImVec2(-1.0f, 0.0f))) {
+                app.reset_adjustments();
+                changed = true;
+            }
+            if (changed) {
+                app.reapply();
             }
         }
         ImGui::End();
 
         ImGui::Begin("Propriedades");
-        if (!texture.valid()) {
+        if (app.source.empty()) {
             ImGui::TextDisabled("Nenhuma imagem.");
         } else {
             ImGui::TextDisabled("Arquivo");
-            ImGui::TextWrapped("%s", current_path.c_str());
+            ImGui::TextWrapped("%s", app.path.c_str());
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
             ImGui::TextDisabled("Dimensões");
-            ImGui::Text("%d x %d", texture.width, texture.height);
+            ImGui::Text("%d x %d", app.source.width, app.source.height);
             ImGui::Spacing();
-            ImGui::TextDisabled("Formato na GPU");
-            ImGui::TextUnformatted("RGBA, 8 bits por canal");
+            ImGui::TextDisabled("Buffer");
+            ImGui::TextUnformatted("RGBA float32, linear");
+            ImGui::Text("%.1f MB", static_cast<double>(app.source.width) * app.source.height * 4 *
+                                       sizeof(float) / (1024.0 * 1024.0));
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::TextDisabled("Luminância (linear)");
+            ImGui::Text("mín   %.4f", app.luma_min);
+            ImGui::Text("máx   %.4f", app.luma_max);
+            ImGui::Text("média %.4f", app.luma_mean);
         }
         ImGui::End();
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Imagem");
-        draw_canvas(canvas, texture);
+        draw_canvas(app.canvas, app.texture);
         ImGui::End();
         ImGui::PopStyleVar();
 

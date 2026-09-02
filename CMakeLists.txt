@@ -48,7 +48,10 @@ target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
 
 add_executable(aresta
     src/main.cpp
+    src/app.cpp
     src/canvas.cpp
+    src/image.cpp
+    src/ops.cpp
     src/texture.cpp
     src/ui.cpp
 )

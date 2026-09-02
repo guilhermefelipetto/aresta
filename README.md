@@ -38,7 +38,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] toolchain de pé
 - [x] janela abrindo, com SDL2 e ImGui
 - [x] PNG na tela, canvas com pan e zoom
-- [ ] o buffer de imagem e as operações por pixel
+- [x] o buffer de imagem e as operações por pixel
 - [ ] pilha de operações não-destrutiva, com undo
 - [ ] filtros de vizinhança
 - [ ] pincel de semente e overlay de máscara

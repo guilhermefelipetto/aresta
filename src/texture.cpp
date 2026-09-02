@@ -4,15 +4,6 @@
 
 #include <SDL_opengl.h>
 
-// O stb não compila limpo com os avisos que o projeto liga, e não é código meu
-// pra sair consertando.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-#pragma GCC diagnostic pop
-
 Texture::~Texture() {
     if (id != 0) {
         glDeleteTextures(1, &id);
@@ -38,33 +29,34 @@ Texture& Texture::operator=(Texture&& other) noexcept {
     return *this;
 }
 
-Texture load_image(const std::string& path, std::string& error) {
-    int w = 0;
-    int h = 0;
-    int channels = 0;
-    unsigned char* pixels = stbi_load(path.c_str(), &w, &h, &channels, 4);
-    if (!pixels) {
-        error = stbi_failure_reason() ? stbi_failure_reason() : "motivo desconhecido";
-        return Texture{};
+void upload_rgba8(Texture& texture, const unsigned char* pixels, int width, int height) {
+    if (!pixels || width <= 0 || height <= 0) {
+        return;
     }
 
-    Texture texture;
-    texture.width = w;
-    texture.height = h;
-    glGenTextures(1, &texture.id);
+    const bool resized = (texture.width != width || texture.height != height);
+    if (texture.id == 0) {
+        glGenTextures(1, &texture.id);
+    }
     glBindTexture(GL_TEXTURE_2D, texture.id);
 
-    // Nearest na ampliação porque a graça de dar zoom aqui é olhar pixel a pixel.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (resized) {
+        // Nearest na ampliação porque a graça de dar zoom aqui é olhar pixel a
+        // pixel.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    if (resized) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     pixels);
+        texture.width = width;
+        texture.height = height;
+    } else {
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
-
-    stbi_image_free(pixels);
-    error.clear();
-    return texture;
 }
