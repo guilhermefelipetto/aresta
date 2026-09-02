@@ -50,6 +50,7 @@ add_executable(aresta
     src/main.cpp
     src/canvas.cpp
     src/texture.cpp
+    src/ui.cpp
 )
 
 target_compile_options(aresta PRIVATE -Wall -Wextra -Wpedantic)

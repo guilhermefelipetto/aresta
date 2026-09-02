@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 
 #include <imgui.h>
 
@@ -36,12 +35,23 @@ void zoom_at(Canvas& canvas, float new_zoom, float focus_x, float focus_y) {
 
 }  // namespace
 
+void canvas_zoom_to(Canvas& canvas, float zoom) {
+    zoom_at(canvas, zoom, canvas.view_w * 0.5f, canvas.view_h * 0.5f);
+}
+
 void draw_canvas(Canvas& canvas, const Texture& texture) {
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 area = ImGui::GetContentRegionAvail();
+    canvas.hovering = false;
     if (area.x <= 0.0f || area.y <= 0.0f) {
         return;
     }
+
+    // No quadro em que o dock é montado o painel ainda não tem o tamanho final,
+    // e enquadrar contra ele trava o zoom no piso. Espera dois quadros iguais.
+    const bool settled = (area.x == canvas.view_w && area.y == canvas.view_h);
+    canvas.view_w = area.x;
+    canvas.view_h = area.y;
 
     ImDrawList* draw = ImGui::GetWindowDrawList();
     const ImVec2 canvas_max(origin.x + area.x, origin.y + area.y);
@@ -56,7 +66,7 @@ void draw_canvas(Canvas& canvas, const Texture& texture) {
         return;
     }
 
-    if (canvas.needs_fit) {
+    if (canvas.needs_fit && settled) {
         fit_to_area(canvas, texture, area);
         canvas.needs_fit = false;
     }
@@ -91,24 +101,20 @@ void draw_canvas(Canvas& canvas, const Texture& texture) {
     const ImVec2 image_max(image_min.x + texture.width * canvas.zoom,
                            image_min.y + texture.height * canvas.zoom);
 
+    if (hovered) {
+        const int px = static_cast<int>(std::floor((io.MousePos.x - image_min.x) / canvas.zoom));
+        const int py = static_cast<int>(std::floor((io.MousePos.y - image_min.y) / canvas.zoom));
+        if (px >= 0 && py >= 0 && px < texture.width && py < texture.height) {
+            canvas.hovering = true;
+            canvas.hover_x = px;
+            canvas.hover_y = py;
+        }
+    }
+
     draw->PushClipRect(origin, canvas_max, true);
     draw->AddImage(static_cast<ImTextureID>(texture.id), image_min, image_max);
 
     // Contorno da imagem, pra não sumir contra o fundo quando ela é escura.
     draw->AddRect(image_min, image_max, IM_COL32(70, 70, 78, 255));
-
-    char status[128];
-    int written = std::snprintf(status, sizeof(status), "%d x %d   %.0f%%",
-                                texture.width, texture.height, canvas.zoom * 100.0f);
-    if (hovered) {
-        const int px = static_cast<int>(std::floor((io.MousePos.x - image_min.x) / canvas.zoom));
-        const int py = static_cast<int>(std::floor((io.MousePos.y - image_min.y) / canvas.zoom));
-        if (px >= 0 && py >= 0 && px < texture.width && py < texture.height) {
-            std::snprintf(status + written, sizeof(status) - written, "   (%d, %d)", px, py);
-        }
-    }
-    draw->AddText(ImVec2(origin.x + 8.0f, canvas_max.y - ImGui::GetTextLineHeight() - 6.0f),
-                  IM_COL32(150, 150, 158, 255), status);
-
     draw->PopClipRect();
 }
