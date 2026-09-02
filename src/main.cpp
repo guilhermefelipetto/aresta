@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <string>
+#include <utility>
 
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -7,7 +9,10 @@
 #include <imgui_impl_sdl2.h>
 #include <imgui_impl_opengl3.h>
 
-int main(int, char**) {
+#include "canvas.h"
+#include "texture.h"
+
+int main(int argc, char** argv) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         std::fprintf(stderr, "SDL_Init falhou: %s\n", SDL_GetError());
         return 1;
@@ -48,7 +53,32 @@ int main(int, char**) {
     ImGui_ImplSDL2_InitForOpenGL(window, gl);
     ImGui_ImplOpenGL3_Init("#version 150");
 
+    Texture texture;
+    Canvas canvas;
+    std::string status;
+
+    auto open_path = [&](const std::string& path) {
+        std::string error;
+        Texture loaded = load_image(path, error);
+        if (!loaded.valid()) {
+            status = "Não abriu " + path + ": " + error;
+            return false;
+        }
+        texture = std::move(loaded);
+        canvas.needs_fit = true;
+        status.clear();
+        SDL_SetWindowTitle(window, ("aresta — " + path).c_str());
+        return true;
+    };
+
+    if (argc > 1) {
+        open_path(argv[1]);
+    }
+
+    char path_input[1024] = {};
+    bool open_requested = false;
     bool rodando = true;
+
     while (rodando) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
@@ -60,17 +90,33 @@ int main(int, char**) {
                 && ev.window.windowID == SDL_GetWindowID(window)) {
                 rodando = false;
             }
+            if (ev.type == SDL_DROPFILE) {
+                open_path(ev.drop.file);
+                SDL_free(ev.drop.file);
+            }
         }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+        const ImGuiID dockspace = ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+
+        const ImGuiIO& io = ImGui::GetIO();
+        if (io.KeyCtrl && !io.WantTextInput) {
+            if (ImGui::IsKeyPressed(ImGuiKey_O)) {
+                open_requested = true;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
+                rodando = false;
+            }
+        }
 
         if (ImGui::BeginMainMenuBar()) {
             if (ImGui::BeginMenu("Arquivo")) {
-                ImGui::MenuItem("Abrir...", "Ctrl+O", false, false);
+                if (ImGui::MenuItem("Abrir...", "Ctrl+O")) {
+                    open_requested = true;
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Sair", "Ctrl+Q")) {
                     rodando = false;
@@ -80,9 +126,37 @@ int main(int, char**) {
             ImGui::EndMainMenuBar();
         }
 
+        if (open_requested) {
+            ImGui::OpenPopup("Abrir imagem");
+            open_requested = false;
+        }
+        if (ImGui::BeginPopupModal("Abrir imagem", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Caminho do arquivo:");
+            ImGui::SetNextItemWidth(460.0f);
+            const bool submitted = ImGui::InputText("##caminho", path_input, sizeof(path_input),
+                                                    ImGuiInputTextFlags_EnterReturnsTrue);
+            if (ImGui::Button("Abrir") || submitted) {
+                if (open_path(path_input)) {
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                status.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!status.empty()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.4f, 1.0f), "%s", status.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::SetNextWindowDockID(dockspace, ImGuiCond_FirstUseEver);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Imagem");
-        ImGui::TextUnformatted("Nada carregado ainda.");
+        draw_canvas(canvas, texture);
         ImGui::End();
+        ImGui::PopStyleVar();
 
         ImGui::Render();
 

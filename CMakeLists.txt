@@ -48,6 +48,8 @@ target_include_directories(stb INTERFACE ${stb_SOURCE_DIR})
 
 add_executable(aresta
     src/main.cpp
+    src/canvas.cpp
+    src/texture.cpp
 )
 
 target_compile_options(aresta PRIVATE -Wall -Wextra -Wpedantic)
