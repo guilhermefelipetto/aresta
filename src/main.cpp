@@ -41,6 +41,7 @@ bool draw_operation_items(App& app) {
         {nullptr, SourceOp{}, nullptr},
         {"convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
         {"equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
+        {"clahe", ClaheOp{}, "um estágio de cor ou escalar"},
         {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
         {"canal", ChannelOp{}, "um estágio de cor"},
@@ -350,9 +351,14 @@ int main(int argc, char** argv) {
             ImGui::TextDisabled("Estágio exibido");
             if (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size())) {
                 const OpInfo info = op_info(app.chain.stages[app.viewed].params);
+                const ValueKind produced =
+                    (app.viewed < static_cast<int>(app.chain.outputs.size()) &&
+                     !app.chain.outputs[app.viewed].empty())
+                        ? app.chain.outputs[app.viewed].kind
+                        : info.output;
                 ImGui::Text("%d  %s", app.viewed, info.name);
-                ImGui::Text("tipo   %s", kind_name(info.output));
-                if (info.output != ValueKind::Color) {
+                ImGui::Text("tipo   %s", kind_name(produced));
+                if (produced != ValueKind::Color) {
                     ImGui::Text("faixa  %.4f .. %.4f", app.view_lo, app.view_hi);
                 }
             }
@@ -509,6 +515,10 @@ int main(int argc, char** argv) {
                         ImGui::TextDisabled("soma %.4f", op->weight[0] + op->weight[1] +
                                                              op->weight[2]);
                     }
+                } else if (auto* op = std::get_if<ClaheOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->tiles, 2, 32, "%d pedaços por lado");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##clip", &op->clip, 1.0f, 8.0f, "recorte %.2f");
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
                                                     "%.2f", "%.2f");

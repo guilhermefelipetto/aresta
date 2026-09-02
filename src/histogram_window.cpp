@@ -14,6 +14,7 @@ namespace {
 void recompute(HistogramWindow& window, const Value& value) {
     window.histogram = histogram_of(value, window.bins, window.srgb);
     window.has_otsu = false;
+    window.dominance = 0.0f;
     window.mean = 0.0f;
     window.median = 0.0f;
     window.deviation = 0.0f;
@@ -34,12 +35,15 @@ void recompute(HistogramWindow& window, const Value& value) {
     const float span = histogram.hi - histogram.lo;
 
     double total = 0.0;
+    float fullest = 0.0f;
     for (int i = 0; i < histogram.bins; ++i) {
         total += counts[i];
+        fullest = std::max(fullest, counts[i]);
     }
     if (total <= 0.0) {
         return;
     }
+    window.dominance = static_cast<float>(fullest / total);
 
     const auto value_at = [&](int bin) {
         return histogram.lo + (static_cast<float>(bin) + 0.5f) / histogram.bins * span;
@@ -146,7 +150,7 @@ void draw_histogram_window(HistogramWindow& window, App& app) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    if (ImGui::BeginTable("stats", 4, ImGuiTableFlags_SizingStretchSame)) {
+    if (ImGui::BeginTable("stats", 5, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn();
         ImGui::TextDisabled("média");
         ImGui::Text("%.4f", window.mean);
@@ -159,6 +163,9 @@ void draw_histogram_window(HistogramWindow& window, App& app) {
         ImGui::TableNextColumn();
         ImGui::TextDisabled("entropia");
         ImGui::Text("%.3f bits", window.entropy);
+        ImGui::TableNextColumn();
+        ImGui::TextDisabled("faixa mais cheia");
+        ImGui::Text("%.1f%%", window.dominance * 100.0f);
         ImGui::EndTable();
     }
 
@@ -181,7 +188,26 @@ void draw_histogram_window(HistogramWindow& window, App& app) {
     if (ImGui::Button("Alongar contraste")) {
         add_stage(app, StretchOp{window.stretch_low, window.stretch_high});
     }
+
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::DragInt("##tiles", &window.clahe_tiles, 0.2f, 2, 32, "%d pedaços");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::DragFloat("##clip", &window.clahe_clip, 0.02f, 1.0f, 8.0f, "corte %.2f");
+    ImGui::SameLine();
+    if (ImGui::Button("Equalizar local")) {
+        add_stage(app, ClaheOp{window.clahe_tiles, window.clahe_clip});
+    }
     ImGui::EndDisabled();
+
+    if (window.dominance > 0.5f) {
+        ImGui::Spacing();
+        ImGui::TextWrapped(
+            "Com %.0f%% dos pixels numa faixa só, equalizar global não vai adiantar: ela é"
+            " monotônica, então tudo que entra junto sai junto. A local dá mapeamentos"
+            " diferentes em lugares diferentes e separa.",
+            window.dominance * 100.0f);
+    }
 
     ImGui::Spacing();
     if (window.has_otsu) {

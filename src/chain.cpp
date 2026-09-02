@@ -60,6 +60,15 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return out;
     }
+    if (const auto* op = std::get_if<ClaheOp>(&params)) {
+        Value out = in[0]->clone();
+        if (out.kind == ValueKind::Scalar) {
+            clahe(out.scalar.view(), op->tiles, op->clip);
+        } else {
+            clahe(out.color.view(), op->tiles, op->clip);
+        }
+        return out;
+    }
     if (const auto* op = std::get_if<StretchOp>(&params)) {
         Value out = in[0]->clone();
         if (out.kind == ValueKind::Scalar) {
@@ -138,6 +147,8 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, EqualizeOp>) {
                 return {"equalizar", 1, {ValueKind::Color}, ValueKind::Color,
                         Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, ClaheOp>) {
+                return {"clahe", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, StretchOp>) {
                 return {"alongar", 1, {ValueKind::Color}, ValueKind::Color,
                         Poly::ColorOrScalar};

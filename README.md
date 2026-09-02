@@ -53,9 +53,16 @@ original. Em cor mostra R, G, B e luminância, com as faixas contadas em sRGB ou
 no valor linear guardado. Escala log por padrão, porque um fundo liso vira um
 pico que achata todo o resto contra o eixo.
 
-Junto vêm média, mediana, desvio e entropia, o nível que o Otsu escolheu
-marcado na curva, e três botões que acrescentam estágio na cadeia: equalizar
-pela acumulada, alongar contraste entre dois percentis, e binarizar no Otsu.
+Junto vêm média, mediana, desvio, entropia e quanto pesa a faixa mais cheia,
+o nível que o Otsu escolheu marcado na curva, e botões que acrescentam estágio
+na cadeia: equalizar pela acumulada, equalizar local (CLAHE), alongar contraste
+entre dois percentis, e binarizar no Otsu.
+
+A equalização global é monotônica, então não separa o que entrou junto. Numa
+foto com fundo liso e comprimido isso é fatal: dá pra ter 80% dos pixels num
+único valor de luminância, e nenhuma função de um argumento vai espalhar
+aquilo. A local escapa disso dando mapeamentos diferentes em lugares
+diferentes.
 
 ## Stack
 
@@ -71,7 +78,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
 - [x] vizinhança por raio, morfologia e componentes conexas
-- [x] histograma, com equalização, alongamento de contraste e Otsu
+- [x] histograma, com equalização global e local, alongamento e Otsu
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [ ] pincel de semente e os algoritmos de grafo
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

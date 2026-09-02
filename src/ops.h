@@ -41,3 +41,10 @@ void equalize(ImageView image);
 // e máximo porque um pixel morto de ruído não pode definir a escala inteira.
 void stretch(MapView<float> scalar, float low_percentile, float high_percentile);
 void stretch(ImageView image, float low_percentile, float high_percentile);
+
+// Equalização local com limite de recorte. Divide em `tiles` x `tiles`
+// pedaços, equaliza cada um e interpola entre os quatro vizinhos, o que evita
+// a emenda visível. O recorte segura o ganho em região quase uniforme, senão
+// ruído de fundo liso vira textura.
+void clahe(MapView<float> scalar, int tiles, float clip_limit);
+void clahe(ImageView image, int tiles, float clip_limit);

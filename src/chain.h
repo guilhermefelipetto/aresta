@@ -30,6 +30,10 @@ struct MorphologyOp {
 };
 struct ComponentsOp { float radius = 1.5f; };
 struct EqualizeOp {};
+struct ClaheOp {
+    int tiles = 8;
+    float clip = 2.0f;
+};
 struct StretchOp {
     float low = 0.5f;
     float high = 99.5f;
@@ -43,7 +47,7 @@ struct ConvolveOp {
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
-                              EqualizeOp, StretchOp>;
+                              EqualizeOp, StretchOp, ClaheOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

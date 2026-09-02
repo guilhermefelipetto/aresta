@@ -23,6 +23,12 @@ struct HistogramWindow {
 
     float stretch_low = 0.5f;
     float stretch_high = 99.5f;
+    int clahe_tiles = 8;
+    float clahe_clip = 2.0f;
+
+    // Fração dos pixels na faixa mais cheia. Quando é alta, equalização global
+    // não tem o que fazer.
+    float dominance = 0.0f;
 
     int seen_revision = -1;
     int seen_stage = -1;

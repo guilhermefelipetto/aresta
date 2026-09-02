@@ -340,3 +340,157 @@ void stretch(ImageView image, float low_percentile, float high_percentile) {
         return stretch_curve(n, read, low_percentile, high_percentile);
     });
 }
+
+namespace {
+
+constexpr int clahe_bins = 256;
+
+std::vector<float> clahe_map(const std::vector<float>& values, int width, int height, int tiles,
+                             float clip_limit) {
+    std::vector<float> out(values.size());
+    if (values.empty()) {
+        return out;
+    }
+
+    tiles = std::clamp(tiles, 1, std::min(width, height));
+    float lo = 0.0f;
+    float hi = 0.0f;
+    scan_range(values.size(), [&](std::size_t i) { return values[i]; }, &lo, &hi);
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+
+    const auto bin_of = [&](float value) {
+        return std::clamp(static_cast<int>((value - lo) / span * clahe_bins), 0, clahe_bins - 1);
+    };
+
+    std::vector<std::vector<float>> curves(static_cast<std::size_t>(tiles) * tiles);
+    for (int ty = 0; ty < tiles; ++ty) {
+        for (int tx = 0; tx < tiles; ++tx) {
+            const int x0 = tx * width / tiles;
+            const int x1 = (tx + 1) * width / tiles;
+            const int y0 = ty * height / tiles;
+            const int y1 = (ty + 1) * height / tiles;
+
+            std::vector<double> counts(clahe_bins, 0.0);
+            double total = 0.0;
+            for (int y = y0; y < y1; ++y) {
+                for (int x = x0; x < x1; ++x) {
+                    counts[static_cast<std::size_t>(
+                        bin_of(values[static_cast<std::size_t>(y) * width + x]))] += 1.0;
+                    total += 1.0;
+                }
+            }
+            if (total <= 0.0) {
+                curves[static_cast<std::size_t>(ty) * tiles + tx].assign(clahe_bins, 0.0f);
+                continue;
+            }
+
+            // Corta o que passa do limite e espalha o excedente por igual. Uma
+            // rodada resolve quase sempre; a segunda pega o que o espalhamento
+            // empurrou de volta pra cima do limite.
+            const double limit = std::max(1.0, static_cast<double>(clip_limit) * total / clahe_bins);
+            for (int pass = 0; pass < 2; ++pass) {
+                double excess = 0.0;
+                for (double& count : counts) {
+                    if (count > limit) {
+                        excess += count - limit;
+                        count = limit;
+                    }
+                }
+                if (excess <= 0.0) {
+                    break;
+                }
+                const double share = excess / clahe_bins;
+                for (double& count : counts) {
+                    count += share;
+                }
+            }
+
+            std::vector<float>& curve = curves[static_cast<std::size_t>(ty) * tiles + tx];
+            curve.resize(clahe_bins);
+            double running = 0.0;
+            for (int i = 0; i < clahe_bins; ++i) {
+                running += counts[static_cast<std::size_t>(i)];
+                curve[static_cast<std::size_t>(i)] = static_cast<float>(running / total);
+            }
+        }
+    }
+
+    // Fora do miolo, entre o primeiro e o último centro, não há dois pedaços pra
+    // misturar: grampear o índice sem zerar o peso costura o pedaço errado ali e
+    // deixa uma emenda visível na borda.
+    const auto weights = [tiles](float f, int* i0, int* i1) {
+        const int base = static_cast<int>(std::floor(f));
+        if (base < 0) {
+            *i0 = *i1 = 0;
+            return 0.0f;
+        }
+        if (base >= tiles - 1) {
+            *i0 = *i1 = tiles - 1;
+            return 0.0f;
+        }
+        *i0 = base;
+        *i1 = base + 1;
+        return f - static_cast<float>(base);
+    };
+
+    for (int y = 0; y < height; ++y) {
+        const float fy = (static_cast<float>(y) + 0.5f) * tiles / height - 0.5f;
+        int ty0 = 0;
+        int ty1 = 0;
+        const float wy = weights(fy, &ty0, &ty1);
+
+        for (int x = 0; x < width; ++x) {
+            const float fx = (static_cast<float>(x) + 0.5f) * tiles / width - 0.5f;
+            int tx0 = 0;
+            int tx1 = 0;
+            const float wx = weights(fx, &tx0, &tx1);
+
+            const std::size_t index = static_cast<std::size_t>(y) * width + x;
+            const int bin = bin_of(values[index]);
+            const auto at = [&](int tx, int ty) {
+                return curves[static_cast<std::size_t>(ty) * tiles + tx][static_cast<std::size_t>(
+                    bin)];
+            };
+            const float top = at(tx0, ty0) * (1.0f - wx) + at(tx1, ty0) * wx;
+            const float bottom = at(tx0, ty1) * (1.0f - wx) + at(tx1, ty1) * wx;
+            out[index] = top * (1.0f - wy) + bottom * wy;
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+void clahe(MapView<float> scalar, int tiles, float clip_limit) {
+    std::vector<float> values(static_cast<std::size_t>(scalar.width) * scalar.height);
+    std::size_t at = 0;
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            values[at++] = row[x];
+        }
+    }
+
+    const std::vector<float> mapped = clahe_map(values, scalar.width, scalar.height, tiles,
+                                                clip_limit);
+    at = 0;
+    for (int y = 0; y < scalar.height; ++y) {
+        float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            row[x] = mapped[at++];
+        }
+    }
+}
+
+void clahe(ImageView image, int tiles, float clip_limit) {
+    const std::vector<float> values = luma_of(image);
+    const std::vector<float> mapped = clahe_map(values, image.width, image.height, tiles,
+                                                clip_limit);
+    std::size_t at = 0;
+    for (int y = 0; y < image.height; ++y) {
+        float* p = image.row(y);
+        for (int x = 0; x < image.width; ++x, p += 4) {
+            retint(p, mapped[at++]);
+        }
+    }
+}
