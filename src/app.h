@@ -23,6 +23,10 @@ struct App {
     // com isso pra saber se precisa refazer.
     int revision = 0;
 
+    // Cadeia comprida vira parede de slider. Com isso ligado, só o estágio
+    // selecionado abre os parâmetros.
+    bool chain_compact = true;
+
     std::string path;
     std::string status;
 

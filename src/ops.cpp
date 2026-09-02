@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "color.h"
+#include "expr.h"
 
 namespace {
 
@@ -162,6 +163,7 @@ void overlay_labels(ImageView image, MapView<int32_t> labels, float opacity) {
 namespace {
 
 constexpr int tone_bins = 4096;
+constexpr int curve_samples = 1024;
 
 struct ToneCurve {
     float lo = 0.0f;
@@ -493,4 +495,171 @@ void clahe(ImageView image, int tiles, float clip_limit) {
             retint(p, mapped[at++]);
         }
     }
+}
+
+const char* combine_name(Combine operation) {
+    switch (operation) {
+        case Combine::Add: return "somar";
+        case Combine::Subtract: return "subtrair";
+        case Combine::AbsDiff: return "diferença absoluta";
+        case Combine::Multiply: return "multiplicar";
+        case Combine::Divide: return "dividir";
+        case Combine::Min: return "mínimo";
+        case Combine::Max: return "máximo";
+        case Combine::Average: return "média";
+    }
+    return "?";
+}
+
+namespace {
+
+float combine_pair(float a, float b, Combine operation) {
+    switch (operation) {
+        case Combine::Add: return a + b;
+        case Combine::Subtract: return a - b;
+        case Combine::AbsDiff: return std::fabs(a - b);
+        case Combine::Multiply: return a * b;
+        case Combine::Divide: return std::fabs(b) > 1e-6f ? a / b : 0.0f;
+        case Combine::Min: return std::min(a, b);
+        case Combine::Max: return std::max(a, b);
+        case Combine::Average: return (a + b) * 0.5f;
+    }
+    return a;
+}
+
+}  // namespace
+
+void combine(ImageView a, ImageView b, Combine operation, float scale, ImageView out) {
+    for (int y = 0; y < out.height; ++y) {
+        const float* pa = a.row(std::min(y, a.height - 1));
+        const float* pb = b.row(std::min(y, b.height - 1));
+        float* q = out.row(y);
+        for (int x = 0; x < out.width; ++x) {
+            const int xa = std::min(x, a.width - 1) * 4;
+            const int xb = std::min(x, b.width - 1) * 4;
+            for (int channel = 0; channel < 3; ++channel) {
+                q[x * 4 + channel] =
+                    combine_pair(pa[xa + channel], pb[xb + channel], operation) * scale;
+            }
+            q[x * 4 + 3] = pa[xa + 3];
+        }
+    }
+}
+
+void combine(MapView<float> a, MapView<float> b, Combine operation, float scale,
+             MapView<float> out) {
+    for (int y = 0; y < out.height; ++y) {
+        const float* pa = a.row(std::min(y, a.height - 1));
+        const float* pb = b.row(std::min(y, b.height - 1));
+        float* q = out.row(y);
+        for (int x = 0; x < out.width; ++x) {
+            q[x] = combine_pair(pa[std::min(x, a.width - 1)], pb[std::min(x, b.width - 1)],
+                                operation) *
+                   scale;
+        }
+    }
+}
+
+void combine(MapView<int32_t> a, MapView<int32_t> b, Combine operation, float scale,
+             MapView<int32_t> out) {
+    for (int y = 0; y < out.height; ++y) {
+        const int32_t* pa = a.row(std::min(y, a.height - 1));
+        const int32_t* pb = b.row(std::min(y, b.height - 1));
+        int32_t* q = out.row(y);
+        for (int x = 0; x < out.width; ++x) {
+            const float value = combine_pair(static_cast<float>(pa[std::min(x, a.width - 1)]),
+                                             static_cast<float>(pb[std::min(x, b.width - 1)]),
+                                             operation) *
+                                scale;
+            q[x] = static_cast<int32_t>(std::lround(value));
+        }
+    }
+}
+
+namespace {
+
+bool build_curve(const char* expression, float a, float b, float c, std::vector<float>* table,
+                 std::string* error) {
+    const Expr parsed = parse_expr(expression ? expression : "");
+    if (!parsed.valid()) {
+        *error = parsed.error;
+        return false;
+    }
+    error->clear();
+
+    // Amostra a curva uma vez e consulta por índice. Reavaliar a árvore por
+    // pixel custaria caro e não daria resolução nenhuma a mais.
+    table->resize(curve_samples);
+    for (int i = 0; i < curve_samples; ++i) {
+        ExprVars vars;
+        vars.v = static_cast<float>(i) / (curve_samples - 1);
+        vars.a = a;
+        vars.b = b;
+        vars.c = c;
+        (*table)[static_cast<std::size_t>(i)] = parsed.eval(vars);
+    }
+    return true;
+}
+
+float sample_curve(const std::vector<float>& table, float value) {
+    const int index = std::clamp(static_cast<int>(value * (curve_samples - 1) + 0.5f), 0,
+                                 curve_samples - 1);
+    return table[static_cast<std::size_t>(index)];
+}
+
+}  // namespace
+
+bool apply_curve(ImageView image, const char* expression, float a, float b, float c, bool on_srgb,
+                 std::string* error) {
+    std::vector<float> table;
+    if (!build_curve(expression, a, b, c, &table, error)) {
+        return false;
+    }
+
+    for (int y = 0; y < image.height; ++y) {
+        float* p = image.row(y);
+        for (int x = 0; x < image.width; ++x, p += 4) {
+            for (int channel = 0; channel < 3; ++channel) {
+                float value = std::clamp(p[channel], 0.0f, 1.0f);
+                if (on_srgb) {
+                    value = linear_to_srgb(value);
+                }
+                value = sample_curve(table, value);
+                if (on_srgb) {
+                    value = srgb_to_linear(std::clamp(value, 0.0f, 1.0f));
+                }
+                p[channel] = value;
+            }
+        }
+    }
+    return true;
+}
+
+bool apply_curve(MapView<float> scalar, const char* expression, float a, float b, float c,
+                 std::string* error) {
+    std::vector<float> table;
+    if (!build_curve(expression, a, b, c, &table, error)) {
+        return false;
+    }
+
+    // Mapa escalar não vive em 0..1 necessariamente; normaliza pelo próprio
+    // intervalo pra curva sempre falar a mesma língua.
+    float lo = std::numeric_limits<float>::max();
+    float hi = std::numeric_limits<float>::lowest();
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            lo = std::min(lo, row[x]);
+            hi = std::max(hi, row[x]);
+        }
+    }
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+
+    for (int y = 0; y < scalar.height; ++y) {
+        float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            row[x] = sample_curve(table, (row[x] - lo) / span);
+        }
+    }
+    return true;
 }

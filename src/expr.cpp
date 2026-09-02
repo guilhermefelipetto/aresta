@@ -20,8 +20,8 @@ namespace {
 using Node = std::shared_ptr<ExprNode>;
 
 int var_index_of(const std::string& name) {
-    static const char* names[] = {"x", "y", "r", "t", "w", "h", "a", "b", "c"};
-    for (int i = 0; i < 9; ++i) {
+    static const char* names[] = {"x", "y", "r", "t", "w", "h", "a", "b", "c", "v"};
+    for (int i = 0; i < 10; ++i) {
         if (name == names[i]) {
             return i;
         }
@@ -39,7 +39,8 @@ float var_value(int index, const ExprVars& v) {
         case 5: return v.h;
         case 6: return v.a;
         case 7: return v.b;
-        default: return v.c;
+        case 8: return v.c;
+        default: return v.v;
     }
 }
 

@@ -51,7 +51,9 @@ add_executable(aresta
     src/app.cpp
     src/canvas.cpp
     src/chain.cpp
+    src/chain_panel.cpp
     src/convolve.cpp
+    src/curve_window.cpp
     src/expr.cpp
     src/histogram.cpp
     src/histogram_window.cpp

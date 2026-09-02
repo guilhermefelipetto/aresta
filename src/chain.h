@@ -30,6 +30,17 @@ struct MorphologyOp {
 };
 struct ComponentsOp { float radius = 1.5f; };
 struct EqualizeOp {};
+struct CombineOp {
+    Combine operation = Combine::Subtract;
+    float scale = 1.0f;
+};
+struct CurveOp {
+    char expression[128] = "v";
+    float a = 1.0f;
+    float b = 1.0f;
+    float c = 0.0f;
+    bool on_srgb = false;
+};
 struct ClaheOp {
     int tiles = 8;
     float clip = 2.0f;
@@ -47,13 +58,22 @@ struct ConvolveOp {
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
-                              EqualizeOp, StretchOp, ClaheOp>;
+                              EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;
 // morfologia não entra em cor porque mínimo e máximo de RGB tratam canal por
 // canal e desfazem a cor.
-enum class Poly { None, ColorOrScalar, ScalarOrLabel };
+enum class Poly {
+    None,
+    ColorOrScalar,
+    ScalarOrLabel,
+
+    // Duas entradas de qualquer tipo, contanto que sejam o mesmo. A checagem de
+    // igualdade fica na avaliação, porque na hora de ligar ainda não se sabe o
+    // que cada lado vai produzir.
+    Pair,
+};
 
 struct OpInfo {
     const char* name;

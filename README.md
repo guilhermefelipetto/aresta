@@ -46,6 +46,17 @@ A janela mostra a soma dos coeficientes e se a matriz é separável, que é a
 diferença entre `w*h` e `w+h` multiplicações por pixel. Aplicar não mexe na
 imagem: acrescenta um estágio de convolução na cadeia.
 
+## Curva
+
+`Ferramentas > Curva` é a família de transformação de intensidade: negativo,
+log, gama, alongamento linear, fatiamento, solarização. Todas saem da mesma
+fórmula em `v`, com o gráfico da transformação desenhado por cima do histograma
+da entrada, que é a figura clássica do Gonzalez virada ferramenta.
+
+Isso não cabe num kernel: convolução é linear, então ela multiplica e soma mas
+não eleva a potência nem corta faixa. Kernel 1x1 com valor 2 multiplica por 2,
+e é só até onde ela vai.
+
 ## Histograma
 
 `Ferramentas > Histograma` mede o estágio que estiver na tela, não a imagem
@@ -77,6 +88,8 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] buffer float32 linear, `Map<T>`, e as operações por pixel
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
+- [x] transformação de intensidade por fórmula, com o gráfico da curva
+- [x] aritmética entre estágios, e os fios da cadeia desenhados
 - [x] vizinhança por raio, morfologia e componentes conexas
 - [x] histograma, com equalização global e local, alongamento e Otsu
 - [x] mapa escalar e de rótulo na tela, com colormap

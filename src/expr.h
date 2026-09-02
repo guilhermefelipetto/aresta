@@ -9,6 +9,7 @@ struct ExprNode;
 // r e t as mesmas coordenadas em polar, e a/b/c ficam livres pra quem escreve a
 // fórmula amarrar num slider.
 struct ExprVars {
+    float v = 0.0f;  // valor do pixel, quando a expressão é curva de intensidade
     float x = 0.0f;
     float y = 0.0f;
     float r = 0.0f;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "image.h"
 #include "map.h"
@@ -48,3 +49,21 @@ void stretch(ImageView image, float low_percentile, float high_percentile);
 // ruído de fundo liso vira textura.
 void clahe(MapView<float> scalar, int tiles, float clip_limit);
 void clahe(ImageView image, int tiles, float clip_limit);
+
+enum class Combine { Add, Subtract, AbsDiff, Multiply, Divide, Min, Max, Average };
+
+const char* combine_name(Combine operation);
+
+void combine(ImageView a, ImageView b, Combine operation, float scale, ImageView out);
+void combine(MapView<float> a, MapView<float> b, Combine operation, float scale,
+             MapView<float> out);
+void combine(MapView<int32_t> a, MapView<int32_t> b, Combine operation, float scale,
+             MapView<int32_t> out);
+
+// Transformação de intensidade: uma expressão em `v`, aplicada pixel a pixel,
+// sem olhar vizinho. É a família do Gonzalez (negativo, log, gama, fatiamento),
+// e nenhuma delas cabe num kernel, porque convolução é linear.
+bool apply_curve(ImageView image, const char* expression, float a, float b, float c, bool on_srgb,
+                 std::string* error);
+bool apply_curve(MapView<float> scalar, const char* expression, float a, float b, float c,
+                 std::string* error);

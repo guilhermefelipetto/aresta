@@ -18,82 +18,11 @@
 #include "app.h"
 #include "canvas.h"
 #include "chain.h"
+#include "chain_panel.h"
+#include "curve_window.h"
 #include "histogram_window.h"
 #include "kernel_window.h"
 #include "ui.h"
-
-namespace {
-
-// Uma lista só, servindo o menu do topo e o botão do painel, pra os dois não
-// divergirem quando entrar operação nova.
-bool draw_operation_items(App& app) {
-    struct Entry {
-        const char* label;
-        OpParams params;
-        const char* needs;
-    };
-
-    const Entry entries[] = {
-        {"exposição", ExposureOp{}, "um estágio de cor"},
-        {"contraste", ContrastOp{}, "um estágio de cor"},
-        {"gama", GammaOp{}, "um estágio de cor"},
-        {"inverter", InvertOp{}, "um estágio de cor"},
-        {nullptr, SourceOp{}, nullptr},
-        {"convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
-        {"equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
-        {"clahe", ClaheOp{}, "um estágio de cor ou escalar"},
-        {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
-        {nullptr, SourceOp{}, nullptr},
-        {"canal", ChannelOp{}, "um estágio de cor"},
-        {"threshold", ThresholdOp{}, "um estágio escalar, tipo luminância"},
-        {"morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
-        {"componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
-        {"overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
-    };
-
-    const int viewed_id = (app.viewed >= 0 &&
-                           app.viewed < static_cast<int>(app.chain.stages.size()))
-                              ? app.chain.stages[app.viewed].id
-                              : -1;
-
-    bool added = false;
-    for (const Entry& entry : entries) {
-        if (!entry.label) {
-            ImGui::Separator();
-            continue;
-        }
-
-        const bool ready = app.chain.can_add(entry.params);
-        OpParams bridge = SourceOp{};
-        const bool bridged = !ready && bridge_for(app.chain, entry.params, &bridge);
-        const char* via = bridged ? op_info(bridge).name : nullptr;
-        char shortcut[48] = {};
-        if (via) {
-            std::snprintf(shortcut, sizeof(shortcut), "via %s", via);
-        }
-
-        if (ImGui::MenuItem(entry.label, via ? shortcut : nullptr, false, ready || bridged)) {
-            int input = viewed_id;
-            if (bridged) {
-                input = app.chain.add(bridge, viewed_id);
-            }
-            app.viewed = app.chain.index_of(app.chain.add(entry.params, input));
-            added = true;
-        }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            if (bridged) {
-                ImGui::SetTooltip("acrescenta um estágio de %s antes, e deixa ele na cadeia\n"
-                                  "pra você trocar o canal ou o limiar depois",
-                                  via);
-            } else if (!ready) {
-                ImGui::SetTooltip("precisa de %s antes", entry.needs);
-            }
-        }
-    }
-    return added;
-}
-
-}  // namespace
 
 int main(int argc, char** argv) {
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -151,6 +80,7 @@ int main(int argc, char** argv) {
     kernel_library.load();
     KernelWindow kernel_window;
     HistogramWindow histogram_window;
+    CurveWindow curve_window;
 
     auto open_path = [&](const std::string& file) {
         if (!app.open(file)) {
@@ -231,6 +161,7 @@ int main(int argc, char** argv) {
             if (ImGui::BeginMenu("Ferramentas")) {
                 ImGui::MenuItem("Kernel...", nullptr, &kernel_window.open);
                 ImGui::MenuItem("Histograma...", nullptr, &histogram_window.open);
+                ImGui::MenuItem("Curva...", nullptr, &curve_window.open);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Janela")) {
@@ -365,210 +296,8 @@ int main(int argc, char** argv) {
         }
         ImGui::End();
 
-        ImGui::Begin("Cadeia");
-        if (app.source.empty()) {
-            ImGui::TextDisabled("Nenhuma imagem.");
-        } else {
-            bool dirty = chain_dirty;
-            chain_dirty = false;
-
-            if (ImGui::Button("Adicionar operação", ImVec2(-1.0f, 0.0f))) {
-                ImGui::OpenPopup("adicionar");
-            }
-            if (ImGui::BeginPopup("adicionar")) {
-                if (draw_operation_items(app)) {
-                    dirty = true;
-                }
-                ImGui::EndPopup();
-            }
-
-            ImGui::Spacing();
-            int to_remove = -1;
-
-            for (std::size_t i = 0; i < app.chain.stages.size(); ++i) {
-                Stage& stage = app.chain.stages[i];
-                const OpInfo info = op_info(stage.params);
-                ImGui::PushID(stage.id);
-
-                const ValueKind produced = (i < app.chain.outputs.size() &&
-                                            !app.chain.outputs[i].empty())
-                                               ? app.chain.outputs[i].kind
-                                               : info.output;
-                char label[160];
-                std::snprintf(label, sizeof(label), "%zu   %-11s -> %s", i, info.name,
-                              kind_name(produced));
-                const bool is_viewed = app.viewed == static_cast<int>(i);
-                if (ImGui::Selectable(label, is_viewed)) {
-                    app.viewed = static_cast<int>(i);
-                    app.upload_view();
-                }
-                if (is_viewed && dirty) {
-                    ImGui::SetScrollHereY(0.6f);
-                }
-
-                ImGui::Indent();
-
-                for (int k = 0; k < info.input_count; ++k) {
-                    const int current =
-                        (k < static_cast<int>(stage.inputs.size())) ? stage.inputs[k] : -1;
-                    const int current_idx = app.chain.index_of(current);
-                    char preview[96];
-                    if (current_idx >= 0) {
-                        std::snprintf(preview, sizeof(preview), "entrada: %d %s", current_idx,
-                                      op_info(app.chain.stages[current_idx].params).name);
-                    } else {
-                        std::snprintf(preview, sizeof(preview), "entrada: (nada)");
-                    }
-
-                    ImGui::PushID(k);
-                    ImGui::SetNextItemWidth(-1.0f);
-                    if (ImGui::BeginCombo("##entrada", preview)) {
-                        for (std::size_t j = 0; j < i; ++j) {
-                            if (op_info(app.chain.stages[j].params).output != info.inputs[k]) {
-                                continue;
-                            }
-                            char option[96];
-                            std::snprintf(option, sizeof(option), "%zu %s", j,
-                                          op_info(app.chain.stages[j].params).name);
-                            if (ImGui::Selectable(option, app.chain.stages[j].id == current)) {
-                                if (k < static_cast<int>(stage.inputs.size())) {
-                                    stage.inputs[k] = app.chain.stages[j].id;
-                                    dirty = true;
-                                }
-                            }
-                        }
-                        ImGui::EndCombo();
-                    }
-                    ImGui::PopID();
-                }
-
-                if (std::get_if<ConvolveOp>(&stage.params)) {
-                    ImGui::TextDisabled("editar em Ferramentas > Kernel");
-                }
-
-                ImGui::SetNextItemWidth(-1.0f);
-                if (auto* op = std::get_if<ExposureOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->stops, -3.0f, 3.0f, "%.2f EV");
-                } else if (auto* op = std::get_if<ContrastOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->amount, -0.9f, 2.0f, "%.2f");
-                } else if (auto* op = std::get_if<GammaOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->gamma, 0.2f, 4.0f, "%.2f");
-                } else if (auto* op = std::get_if<ThresholdOp>(&stage.params)) {
-                    ImGui::BeginDisabled(op->otsu);
-                    dirty |= ImGui::DragFloat("##p", &op->level, 0.002f, -20.0f, 20.0f, "%.4f");
-                    ImGui::EndDisabled();
-                    dirty |= ImGui::Checkbox("Otsu", &op->otsu);
-                } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->opacity, 0.0f, 1.0f, "%.2f");
-                } else if (auto* op = std::get_if<ChannelOp>(&stage.params)) {
-                    int channel = static_cast<int>(op->channel);
-                    if (ImGui::Combo("##p", &channel,
-                                     "luminância\0vermelho\0verde\0azul\0máximo\0mínimo\0"
-                                     "saturação\0")) {
-                        op->channel = static_cast<Channel>(channel);
-                        dirty = true;
-                    }
-
-                    if (op->channel == Channel::Luma) {
-                        struct Preset {
-                            const char* label;
-                            float weight[3];
-                            bool on_srgb;
-                        };
-                        // Cada padrão é o par peso mais espaço, não só os
-                        // números: 601 sobre linear não é o luma que a
-                        // literatura chama de 601.
-                        static const Preset presets[] = {
-                            {"Rec. 709 (linear)", {0.2126f, 0.7152f, 0.0722f}, false},
-                            {"Rec. 601 (gama)", {0.299f, 0.587f, 0.114f}, true},
-                            {"Rec. 2020 (linear)", {0.2627f, 0.6780f, 0.0593f}, false},
-                            {"média simples", {1.0f / 3, 1.0f / 3, 1.0f / 3}, false},
-                        };
-                        int chosen = -1;
-                        for (int p = 0; p < 4; ++p) {
-                            if (op->on_srgb == presets[p].on_srgb &&
-                                std::fabs(op->weight[0] - presets[p].weight[0]) < 1e-4f &&
-                                std::fabs(op->weight[1] - presets[p].weight[1]) < 1e-4f &&
-                                std::fabs(op->weight[2] - presets[p].weight[2]) < 1e-4f) {
-                                chosen = p;
-                                break;
-                            }
-                        }
-                        const char* preview = chosen >= 0 ? presets[chosen].label : "à mão";
-                        ImGui::SetNextItemWidth(-1.0f);
-                        if (ImGui::BeginCombo("##pesos", preview)) {
-                            for (int p = 0; p < 4; ++p) {
-                                if (ImGui::Selectable(presets[p].label, chosen == p)) {
-                                    for (int ch = 0; ch < 3; ++ch) {
-                                        op->weight[ch] = presets[p].weight[ch];
-                                    }
-                                    op->on_srgb = presets[p].on_srgb;
-                                    dirty = true;
-                                }
-                            }
-                            ImGui::EndCombo();
-                        }
-                        ImGui::SetNextItemWidth(-1.0f);
-                        dirty |= ImGui::DragFloat3("##w", op->weight, 0.002f, -2.0f, 2.0f, "%.4f");
-                        dirty |= ImGui::Checkbox("sobre sRGB", &op->on_srgb);
-                        ImGui::SameLine();
-                        ImGui::TextDisabled("soma %.4f", op->weight[0] + op->weight[1] +
-                                                             op->weight[2]);
-                    }
-                } else if (auto* op = std::get_if<ClaheOp>(&stage.params)) {
-                    dirty |= ImGui::SliderInt("##p", &op->tiles, 2, 32, "%d pedaços por lado");
-                    ImGui::SetNextItemWidth(-1.0f);
-                    dirty |= ImGui::SliderFloat("##clip", &op->clip, 1.0f, 8.0f, "recorte %.2f");
-                } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
-                    dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
-                                                    "%.2f", "%.2f");
-                } else if (auto* op = std::get_if<ComponentsOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
-                } else if (auto* op = std::get_if<MorphologyOp>(&stage.params)) {
-                    int operation = static_cast<int>(op->operation);
-                    if (ImGui::Combo("##p", &operation,
-                                     "erosão\0dilatação\0abertura\0fechamento\0gradiente\0"
-                                     "top-hat\0black-hat\0")) {
-                        op->operation = static_cast<Morph>(operation);
-                        dirty = true;
-                    }
-                    ImGui::SetNextItemWidth(-1.0f);
-                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 6.0f, "raio %.2f");
-                }
-
-                if (stage.id != 0) {
-                    if (ImGui::Checkbox("ativo", &stage.enabled)) {
-                        dirty = true;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::SmallButton("remover")) {
-                        to_remove = stage.id;
-                    }
-                }
-
-                if (!stage.error.empty()) {
-                    ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", stage.error.c_str());
-                } else if (!stage.note.empty()) {
-                    ImGui::TextDisabled("%s", stage.note.c_str());
-                }
-
-                ImGui::Unindent();
-                ImGui::Separator();
-                ImGui::PopID();
-            }
-
-            if (to_remove >= 0) {
-                app.chain.remove(to_remove);
-                if (app.viewed >= static_cast<int>(app.chain.stages.size())) {
-                    app.viewed = static_cast<int>(app.chain.stages.size()) - 1;
-                }
-                dirty = true;
-            }
-            if (dirty) {
-                app.evaluate();
-            }
-        }
-        ImGui::End();
+        draw_chain_panel(app, chain_dirty);
+        chain_dirty = false;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Imagem");
@@ -578,6 +307,7 @@ int main(int argc, char** argv) {
 
         draw_kernel_window(kernel_window, kernel_library, app);
         draw_histogram_window(histogram_window, app);
+        draw_curve_window(curve_window, app);
 
         ImGui::Render();
 

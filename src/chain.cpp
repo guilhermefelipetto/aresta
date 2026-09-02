@@ -11,6 +11,38 @@
 namespace {
 
 Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
+    if (const auto* op = std::get_if<CombineOp>(&params)) {
+        Value out = in[0]->clone();
+        switch (out.kind) {
+            case ValueKind::Color:
+                combine(in[0]->color.view(), in[1]->color.view(), op->operation, op->scale,
+                        out.color.view());
+                break;
+            case ValueKind::Scalar:
+                combine(in[0]->scalar.view(), in[1]->scalar.view(), op->operation, op->scale,
+                        out.scalar.view());
+                break;
+            case ValueKind::Label:
+                combine(in[0]->label.view(), in[1]->label.view(), op->operation, op->scale,
+                        out.label.view());
+                break;
+        }
+        *note = combine_name(op->operation);
+        return out;
+    }
+    if (const auto* op = std::get_if<CurveOp>(&params)) {
+        Value out = in[0]->clone();
+        std::string error;
+        const bool ok = out.kind == ValueKind::Scalar
+                            ? apply_curve(out.scalar.view(), op->expression, op->a, op->b, op->c,
+                                          &error)
+                            : apply_curve(out.color.view(), op->expression, op->a, op->b, op->c,
+                                          op->on_srgb, &error);
+        if (!ok) {
+            *note = error;
+        }
+        return out;
+    }
     if (const auto* op = std::get_if<ExposureOp>(&params)) {
         Value out = in[0]->clone();
         adjust_exposure(out.color.view(), op->stops);
@@ -112,6 +144,8 @@ bool poly_accepts(Poly poly, ValueKind kind) {
             return kind == ValueKind::Color || kind == ValueKind::Scalar;
         case Poly::ScalarOrLabel:
             return kind == ValueKind::Scalar || kind == ValueKind::Label;
+        case Poly::Pair:
+            return true;
         case Poly::None:
             break;
     }
@@ -147,6 +181,11 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, EqualizeOp>) {
                 return {"equalizar", 1, {ValueKind::Color}, ValueKind::Color,
                         Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, CombineOp>) {
+                return {"combinar", 2, {ValueKind::Color, ValueKind::Color}, ValueKind::Color,
+                        Poly::Pair};
+            } else if constexpr (std::is_same_v<T, CurveOp>) {
+                return {"curva", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, ClaheOp>) {
                 return {"clahe", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, StretchOp>) {
@@ -277,6 +316,12 @@ void Chain::evaluate(const Image& source) {
                 break;
             }
             in[k] = &outputs[idx];
+        }
+
+        if (stage.error.empty() && info.poly == Poly::Pair && in[0] && in[1] &&
+            in[0]->kind != in[1]->kind) {
+            stage.error = std::string("tipos diferentes: ") + kind_name(in[0]->kind) + " e " +
+                          kind_name(in[1]->kind);
         }
 
         if (!stage.error.empty()) {
