@@ -1,5 +1,6 @@
 #include "chain.h"
 
+#include <cstdio>
 #include <type_traits>
 #include <utility>
 
@@ -412,4 +413,65 @@ bool bridge_for(const Chain& chain, const OpParams& params, OpParams* bridge) {
         }
     }
     return false;
+}
+
+std::string stage_summary(const OpParams& params) {
+    char buffer[192] = {};
+
+    if (const auto* op = std::get_if<ExposureOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%+.2f EV", op->stops);
+    } else if (const auto* op = std::get_if<ContrastOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%+.2f", op->amount);
+    } else if (const auto* op = std::get_if<GammaOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "gama %.2f", op->gamma);
+    } else if (const auto* op = std::get_if<ChannelOp>(&params)) {
+        if (op->channel == Channel::Luma) {
+            std::snprintf(buffer, sizeof(buffer), "luminância %.3f/%.3f/%.3f%s", op->weight[0],
+                          op->weight[1], op->weight[2], op->on_srgb ? ", sRGB" : "");
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s%s", channel_name(op->channel),
+                          op->on_srgb ? ", sRGB" : "");
+        }
+    } else if (const auto* op = std::get_if<ThresholdOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), op->otsu ? "Otsu" : "acima de %.4f", op->level);
+    } else if (const auto* op = std::get_if<MorphologyOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", morph_name(op->operation),
+                      op->radius);
+    } else if (const auto* op = std::get_if<ComponentsOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f", op->radius);
+    } else if (const auto* op = std::get_if<StretchOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "percentis %.2f a %.2f", op->low, op->high);
+    } else if (const auto* op = std::get_if<ClaheOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d pedaços, corte %.2f", op->tiles, op->clip);
+    } else if (const auto* op = std::get_if<ConvolveOp>(&params)) {
+        if (const char* conhecido = builtin_kernel_name(op->kernel)) {
+            std::snprintf(buffer, sizeof(buffer), "%s, %s%s", conhecido, border_name(op->border),
+                          op->flip ? ", espelhado" : "");
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%dx%d, soma %+.3f, %s%s", op->kernel.width,
+                          op->kernel.height, op->kernel.sum(), border_name(op->border),
+                          op->flip ? ", espelhado" : "");
+        }
+    } else if (const auto* op = std::get_if<CurveOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s   a=%.3f b=%.3f", op->expression, op->a, op->b);
+    } else if (const auto* op = std::get_if<CombineOp>(&params)) {
+        if (op->scale == 1.0f) {
+            std::snprintf(buffer, sizeof(buffer), "%s", combine_name(op->operation));
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s, escala %.3f", combine_name(op->operation),
+                          op->scale);
+        }
+    } else if (const auto* op = std::get_if<RankOp>(&params)) {
+        if (op->kind == Rank::AlphaTrimmed) {
+            std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f, corta %.0f%%",
+                          rank_name(op->kind), op->radius, op->alpha * 100.0f);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", rank_name(op->kind),
+                          op->radius);
+        }
+    } else if (const auto* op = std::get_if<BitPlaneOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "bit %d", op->plane);
+    }
+
+    return buffer;
 }

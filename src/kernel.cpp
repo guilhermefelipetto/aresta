@@ -393,3 +393,21 @@ void KernelLibrary::save() const {
         }
     }
 }
+
+const char* builtin_kernel_name(const Kernel& kernel) {
+    static const KernelLibrary library;
+    for (const NamedKernel& item : library.items) {
+        if (!item.builtin || item.kernel.width != kernel.width ||
+            item.kernel.height != kernel.height) {
+            continue;
+        }
+        bool igual = true;
+        for (std::size_t i = 0; i < kernel.values.size() && igual; ++i) {
+            igual = std::fabs(item.kernel.values[i] - kernel.values[i]) < 1e-5f;
+        }
+        if (igual) {
+            return item.name.c_str();
+        }
+    }
+    return nullptr;
+}

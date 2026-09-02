@@ -63,3 +63,7 @@ struct KernelLibrary {
 };
 
 std::string kernel_library_path();
+
+// Nome do kernel de fábrica idêntico a este, ou nullptr. Serve pra dizer
+// "sobel x" no lugar de "3x3, soma zero", que não distingue nada.
+const char* builtin_kernel_name(const Kernel& kernel);

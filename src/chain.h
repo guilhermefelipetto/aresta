@@ -98,6 +98,10 @@ struct OpInfo {
 
 bool poly_accepts(Poly poly, ValueKind kind);
 
+// Linha curta com os parâmetros que distinguem duas operações do mesmo nome.
+// Com três convoluções empilhadas, "convolução" três vezes não ajuda ninguém.
+std::string stage_summary(const OpParams& params);
+
 struct Chain;
 
 // Quando falta o tipo intermediário, diz qual operação resolveria em um passo

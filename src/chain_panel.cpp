@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 #include <imgui.h>
@@ -246,6 +247,11 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
 
             ImGui::Indent();
             const bool aberto = is_viewed || !app.chain_compact;
+
+            const std::string resumo = stage_summary(stage.params);
+            if (!resumo.empty()) {
+                ImGui::TextDisabled("%s", resumo.c_str());
+            }
 
             for (int k = 0; aberto && k < info.input_count; ++k) {
                 const int current =
