@@ -1,3 +1,4 @@
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <string>
@@ -460,6 +461,53 @@ int main(int argc, char** argv) {
                                      "saturação\0")) {
                         op->channel = static_cast<Channel>(channel);
                         dirty = true;
+                    }
+
+                    if (op->channel == Channel::Luma) {
+                        struct Preset {
+                            const char* label;
+                            float weight[3];
+                            bool on_srgb;
+                        };
+                        // Cada padrão é o par peso mais espaço, não só os
+                        // números: 601 sobre linear não é o luma que a
+                        // literatura chama de 601.
+                        static const Preset presets[] = {
+                            {"Rec. 709 (linear)", {0.2126f, 0.7152f, 0.0722f}, false},
+                            {"Rec. 601 (gama)", {0.299f, 0.587f, 0.114f}, true},
+                            {"Rec. 2020 (linear)", {0.2627f, 0.6780f, 0.0593f}, false},
+                            {"média simples", {1.0f / 3, 1.0f / 3, 1.0f / 3}, false},
+                        };
+                        int chosen = -1;
+                        for (int p = 0; p < 4; ++p) {
+                            if (op->on_srgb == presets[p].on_srgb &&
+                                std::fabs(op->weight[0] - presets[p].weight[0]) < 1e-4f &&
+                                std::fabs(op->weight[1] - presets[p].weight[1]) < 1e-4f &&
+                                std::fabs(op->weight[2] - presets[p].weight[2]) < 1e-4f) {
+                                chosen = p;
+                                break;
+                            }
+                        }
+                        const char* preview = chosen >= 0 ? presets[chosen].label : "à mão";
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::BeginCombo("##pesos", preview)) {
+                            for (int p = 0; p < 4; ++p) {
+                                if (ImGui::Selectable(presets[p].label, chosen == p)) {
+                                    for (int ch = 0; ch < 3; ++ch) {
+                                        op->weight[ch] = presets[p].weight[ch];
+                                    }
+                                    op->on_srgb = presets[p].on_srgb;
+                                    dirty = true;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::DragFloat3("##w", op->weight, 0.002f, -2.0f, 2.0f, "%.4f");
+                        dirty |= ImGui::Checkbox("sobre sRGB", &op->on_srgb);
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("soma %.4f", op->weight[0] + op->weight[1] +
+                                                             op->weight[2]);
                     }
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,

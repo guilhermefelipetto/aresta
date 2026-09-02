@@ -19,7 +19,12 @@ void invert(ImageView image);
 enum class Channel { Luma, Red, Green, Blue, Max, Min, Saturation };
 
 const char* channel_name(Channel channel);
-Map<float> channel_of(ImageView image, Channel channel);
+
+// `weights` só é usado por Channel::Luma. `on_srgb` decide se a redução vê o
+// valor linear guardado ou o codificado: Rec. 709 é definido sobre linear, mas
+// o clássico Rec. 601 (0.299/0.587/0.114) é definido sobre gama, e é o que o
+// cvtColor do OpenCV faz.
+Map<float> channel_of(ImageView image, Channel channel, const float* weights, bool on_srgb);
 
 // Acima do nível vira 1, abaixo vira 0. Um rótulo binário ainda é rótulo.
 Map<int32_t> threshold(MapView<float> scalar, float level);

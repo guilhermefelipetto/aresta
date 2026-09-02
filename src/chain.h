@@ -15,7 +15,13 @@ struct ExposureOp { float stops = 0.0f; };
 struct ContrastOp { float amount = 0.0f; };
 struct GammaOp { float gamma = 1.0f; };
 struct InvertOp {};
-struct ChannelOp { Channel channel = Channel::Luma; };
+struct ChannelOp {
+    Channel channel = Channel::Luma;
+
+    // Rec. 709, que é o que combina com o buffer linear.
+    float weight[3] = {0.2126f, 0.7152f, 0.0722f};
+    bool on_srgb = false;
+};
 struct ThresholdOp { float level = 0.5f; bool otsu = false; };
 struct OverlayOp { float opacity = 0.5f; };
 struct MorphologyOp {

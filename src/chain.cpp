@@ -32,7 +32,8 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return out;
     }
     if (const auto* op = std::get_if<ChannelOp>(&params)) {
-        return make_scalar(channel_of(in[0]->color.view(), op->channel));
+        return make_scalar(
+            channel_of(in[0]->color.view(), op->channel, op->weight, op->on_srgb));
     }
     if (const auto* op = std::get_if<ThresholdOp>(&params)) {
         float level = op->level;
