@@ -1,0 +1,8 @@
+build/
+aresta
+compile_commands.json
+.cache/
+.vscode/
+CLAUDE.md
+third_party/*/
+docs/
