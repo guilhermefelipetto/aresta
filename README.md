@@ -33,6 +33,19 @@ pra tela.
 É onde ficam gradiente, distância, rótulo, binário, e mais tarde os mapas de
 custo e predecessor da IFT.
 
+## Kernel
+
+`Ferramentas > Kernel` abre a grade. Dá pra digitar coeficiente a coeficiente,
+carregar um dos prontos, gerar por parâmetro (gaussiana, LoG, diferença de
+gaussianas, gabor, disco, borrado de movimento) ou preencher por fórmula, onde
+`x` e `y` contam do centro, `r` e `t` são as mesmas coordenadas em polar e
+`a`, `b`, `c` ficam amarrados em sliders. `gauss(r, a)` reconstrói a gaussiana,
+`r <= a` dá um disco.
+
+A janela mostra a soma dos coeficientes e se a matriz é separável, que é a
+diferença entre `w*h` e `w+h` multiplicações por pixel. Aplicar não mexe na
+imagem: acrescenta um estágio de convolução na cadeia.
+
 ## Stack
 
 C++20 no núcleo, SDL2 pra janela e input, Dear ImGui pra interface, OpenGL 3.3
@@ -45,8 +58,9 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] imagem na tela, canvas com pan e zoom
 - [x] buffer float32 linear, `Map<T>`, e as operações por pixel
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
-- [ ] vizinhança configurável, convolução e um editor de kernel
-- [ ] histograma, threshold e morfologia
+- [x] convolução, com editor de kernel, geradores e fórmula
+- [ ] vizinhança configurável (4, 8, 16) e morfologia
+- [ ] histograma e threshold automático
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [ ] pincel de semente e os algoritmos de grafo
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

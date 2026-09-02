@@ -4,6 +4,8 @@
 #include <variant>
 #include <vector>
 
+#include "convolve.h"
+#include "kernel.h"
 #include "value.h"
 
 struct SourceOp {};
@@ -14,15 +16,25 @@ struct InvertOp {};
 struct LuminanceOp {};
 struct ThresholdOp { float level = 0.5f; };
 struct OverlayOp { float opacity = 0.5f; };
+struct ConvolveOp {
+    Kernel kernel;
+    Border border = Border::Clamp;
+    bool flip = false;
+    bool normalize = false;
+};
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, LuminanceOp,
-                              ThresholdOp, OverlayOp>;
+                              ThresholdOp, OverlayOp, ConvolveOp>;
 
 struct OpInfo {
     const char* name;
     int input_count;
     ValueKind inputs[2];
     ValueKind output;
+
+    // Convolução aceita cor ou escalar e devolve o mesmo tipo que recebeu.
+    // Rótulo não entra: interpolar índice de região não quer dizer nada.
+    bool polymorphic = false;
 };
 
 OpInfo op_info(const OpParams& params);

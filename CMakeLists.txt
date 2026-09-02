@@ -51,7 +51,11 @@ add_executable(aresta
     src/app.cpp
     src/canvas.cpp
     src/chain.cpp
+    src/convolve.cpp
+    src/expr.cpp
     src/image.cpp
+    src/kernel.cpp
+    src/kernel_window.cpp
     src/ops.cpp
     src/texture.cpp
     src/ui.cpp

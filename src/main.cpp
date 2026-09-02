@@ -17,6 +17,7 @@
 #include "app.h"
 #include "canvas.h"
 #include "chain.h"
+#include "kernel_window.h"
 #include "ui.h"
 
 int main(int argc, char** argv) {
@@ -65,12 +66,15 @@ int main(int argc, char** argv) {
     bool layout_pending = !std::filesystem::exists(ImGui::GetIO().IniFilename);
 
     App app;
+    KernelLibrary kernel_library;
+    kernel_library.load();
+    KernelWindow kernel_window;
 
     auto open_path = [&](const std::string& file) {
         if (!app.open(file)) {
             return false;
         }
-        SDL_SetWindowTitle(window, ("aresta — " + file).c_str());
+        SDL_SetWindowTitle(window, (file + " - aresta").c_str());
         return true;
     };
 
@@ -131,6 +135,10 @@ int main(int argc, char** argv) {
                 if (ImGui::MenuItem("Tamanho real", "1", false, app.texture.valid())) {
                     canvas_zoom_to(app.canvas, 1.0f);
                 }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Ferramentas")) {
+                ImGui::MenuItem("Kernel...", nullptr, &kernel_window.open);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Janela")) {
@@ -196,7 +204,7 @@ int main(int argc, char** argv) {
             ImGui::EndPopup();
         }
 
-        ImGui::Begin("Ferramentas");
+        ImGui::Begin("Vista");
         if (!app.texture.valid()) {
             ImGui::TextDisabled("Nenhuma imagem.");
         } else {
@@ -289,9 +297,13 @@ int main(int argc, char** argv) {
                 const OpInfo info = op_info(stage.params);
                 ImGui::PushID(stage.id);
 
+                const ValueKind produced = (i < app.chain.outputs.size() &&
+                                            !app.chain.outputs[i].empty())
+                                               ? app.chain.outputs[i].kind
+                                               : info.output;
                 char label[160];
                 std::snprintf(label, sizeof(label), "%zu   %-11s -> %s", i, info.name,
-                              kind_name(info.output));
+                              kind_name(produced));
                 if (ImGui::Selectable(label, app.viewed == static_cast<int>(i))) {
                     app.viewed = static_cast<int>(i);
                     app.upload_view();
@@ -331,6 +343,10 @@ int main(int argc, char** argv) {
                         ImGui::EndCombo();
                     }
                     ImGui::PopID();
+                }
+
+                if (std::get_if<ConvolveOp>(&stage.params)) {
+                    ImGui::TextDisabled("editar em Ferramentas > Kernel");
                 }
 
                 ImGui::SetNextItemWidth(-1.0f);
@@ -383,6 +399,8 @@ int main(int argc, char** argv) {
         draw_canvas(app.canvas, app.texture);
         ImGui::End();
         ImGui::PopStyleVar();
+
+        draw_kernel_window(kernel_window, kernel_library, app);
 
         ImGui::Render();
 

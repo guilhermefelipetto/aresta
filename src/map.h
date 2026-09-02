@@ -19,7 +19,7 @@ struct MapView {
 };
 
 // Um valor por pixel, planar. É onde a IFT vai guardar custo, raiz, predecessor
-// e rótulo — mesma geometria da imagem, sem o peso dos quatro canais.
+// e rótulo, com a mesma geometria da imagem e sem o peso dos quatro canais.
 template <typename T>
 struct Map {
     int width = 0;

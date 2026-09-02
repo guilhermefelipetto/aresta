@@ -3,6 +3,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "convolve.h"
 #include "ops.h"
 
 namespace {
@@ -34,6 +35,16 @@ Value apply_op(const OpParams& params, Value* const* in) {
     if (const auto* op = std::get_if<ThresholdOp>(&params)) {
         return make_label(threshold(in[0]->scalar.view(), op->level));
     }
+    if (const auto* op = std::get_if<ConvolveOp>(&params)) {
+        Kernel kernel = op->kernel;
+        if (op->normalize) {
+            kernel.normalize();
+        }
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(convolve(in[0]->scalar.view(), kernel, op->border, op->flip));
+        }
+        return make_color(convolve(in[0]->color.view(), kernel, op->border, op->flip));
+    }
     if (const auto* op = std::get_if<OverlayOp>(&params)) {
         Value out = in[0]->clone();
         overlay_labels(out.color.view(), in[1]->label.view(), op->opacity);
@@ -62,6 +73,8 @@ OpInfo op_info(const OpParams& params) {
                 return {"luminância", 1, {ValueKind::Color}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ThresholdOp>) {
                 return {"threshold", 1, {ValueKind::Scalar}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, ConvolveOp>) {
+                return {"convolução", 1, {ValueKind::Color}, ValueKind::Color, true};
             } else {
                 return {"overlay", 2, {ValueKind::Color, ValueKind::Label}, ValueKind::Color};
             }
@@ -96,7 +109,10 @@ int Chain::add(OpParams params) {
     for (int k = 0; k < info.input_count; ++k) {
         int chosen = 0;
         for (int i = static_cast<int>(stages.size()) - 1; i >= 0; --i) {
-            if (op_info(stages[i].params).output == info.inputs[k]) {
+            const ValueKind produced = op_info(stages[i].params).output;
+            const bool serve = info.polymorphic ? (produced != ValueKind::Label)
+                                                : (produced == info.inputs[k]);
+            if (serve) {
                 chosen = stages[i].id;
                 break;
             }
@@ -153,7 +169,12 @@ void Chain::evaluate(const Image& source) {
                 stage.error = "entrada vazia";
                 break;
             }
-            if (outputs[idx].kind != info.inputs[k]) {
+            if (info.polymorphic) {
+                if (outputs[idx].kind == ValueKind::Label) {
+                    stage.error = "não roda sobre rótulo";
+                    break;
+                }
+            } else if (outputs[idx].kind != info.inputs[k]) {
                 stage.error = std::string("espera ") + kind_name(info.inputs[k]) + ", recebeu " +
                               kind_name(outputs[idx].kind);
                 break;

@@ -78,7 +78,7 @@ void build_default_layout(ImGuiID dockspace) {
     const ImGuiID right_bottom =
         ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.55f, nullptr, &right);
 
-    ImGui::DockBuilderDockWindow("Ferramentas", left);
+    ImGui::DockBuilderDockWindow("Vista", left);
     ImGui::DockBuilderDockWindow("Propriedades", right);
     ImGui::DockBuilderDockWindow("Cadeia", right_bottom);
     ImGui::DockBuilderDockWindow("Imagem", center);
