@@ -6,3 +6,4 @@ compile_commands.json
 CLAUDE.md
 third_party/*/
 docs/
+imgui.ini
