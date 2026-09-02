@@ -119,6 +119,11 @@ struct Chain {
 
     int index_of(int id) const;
 
+    // O tipo que o estágio produziu de fato, que só coincide com o declarado
+    // quando a operação não é polimórfica: morfologia declara escalar mas
+    // devolve rótulo quando recebe rótulo.
+    ValueKind kind_of(int index) const;
+
     // Id do estágio que serve de entrada k, ou -1 se nenhum serve. `prefer` é
     // tentado primeiro, pra operação nova pendurar no que está sendo olhado.
     int find_input(const OpInfo& info, int k, int prefer_id) const;

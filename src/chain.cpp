@@ -214,21 +214,31 @@ int Chain::index_of(int id) const {
     return -1;
 }
 
+ValueKind Chain::kind_of(int index) const {
+    if (index < 0 || index >= static_cast<int>(stages.size())) {
+        return ValueKind::Color;
+    }
+    if (index < static_cast<int>(outputs.size()) && !outputs[index].empty()) {
+        return outputs[index].kind;
+    }
+    return op_info(stages[index].params).output;
+}
+
 int Chain::find_input(const OpInfo& info, int k, int prefer_id) const {
-    const auto serves = [&](const Stage& candidate) {
-        const ValueKind produced = op_info(candidate.params).output;
+    const auto serves = [&](int index) {
+        const ValueKind produced = kind_of(index);
         return (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
                                          : (produced == info.inputs[k]);
     };
 
     if (prefer_id >= 0) {
         const int index = index_of(prefer_id);
-        if (index >= 0 && serves(stages[index])) {
+        if (index >= 0 && serves(index)) {
             return prefer_id;
         }
     }
     for (int i = static_cast<int>(stages.size()) - 1; i >= 0; --i) {
-        if (serves(stages[i])) {
+        if (serves(i)) {
             return stages[i].id;
         }
     }
