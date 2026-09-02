@@ -14,7 +14,11 @@ struct App {
     Texture texture;
     Canvas canvas;
 
-    int viewed = 0;  // índice na lista de estágios, não id
+    int viewed = 0;  // índice do estágio selecionado pra edição
+
+    // Id do estágio preso na tela, ou -1 pra tela seguir a seleção. Id e não
+    // índice, pra fixação sobreviver a apagar estágio do meio.
+    int pinned = -1;
     Colormap colormap = Colormap::Gray;
     float view_lo = 0.0f;
     float view_hi = 0.0f;
@@ -29,6 +33,9 @@ struct App {
 
     std::string path;
     std::string status;
+
+    // Índice do que está na tela: o fixado quando existe, senão o selecionado.
+    int shown() const;
 
     bool open(const std::string& file);
     void evaluate();

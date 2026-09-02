@@ -209,7 +209,12 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             ImGui::Indent(gutter);
 
             const bool is_viewed = app.viewed == static_cast<int>(i);
-            if (ImGui::Selectable(label, is_viewed)) {
+            const bool is_pinned = app.pinned == stage.id;
+            const float pin_width = 38.0f;
+
+            if (ImGui::Selectable(label, is_viewed,
+                                  ImGuiSelectableFlags_None,
+                                  ImVec2(ImGui::GetContentRegionAvail().x - pin_width, 0.0f))) {
                 app.viewed = static_cast<int>(i);
                 app.upload_view();
             }
@@ -218,6 +223,22 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             }
             rows.push_back({stage.id,
                             (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f});
+
+            ImGui::SameLine();
+            if (is_pinned) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+            }
+            if (ImGui::SmallButton("ver")) {
+                app.pinned = is_pinned ? -1 : stage.id;
+                app.upload_view();
+            }
+            if (is_pinned) {
+                ImGui::PopStyleColor();
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(is_pinned ? "solta a tela, ela volta a seguir a seleção"
+                                            : "prende a tela neste estágio");
+            }
 
             ImGui::Indent();
             const bool aberto = is_viewed || !app.chain_compact;
@@ -396,6 +417,9 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
         draw_links(links, rows, panel_x + gutter - 9.0f);
 
         if (to_remove >= 0) {
+            if (app.pinned == to_remove) {
+                app.pinned = -1;
+            }
             app.chain.remove(to_remove);
             if (app.viewed >= static_cast<int>(app.chain.stages.size())) {
                 app.viewed = static_cast<int>(app.chain.stages.size()) - 1;

@@ -15,6 +15,7 @@ bool App::open(const std::string& file) {
     status.clear();
     chain = Chain();
     viewed = 0;
+    pinned = -1;
     canvas.needs_fit = true;
     evaluate();
     return true;
@@ -28,6 +29,14 @@ void App::evaluate() {
     upload_view();
 }
 
+int App::shown() const {
+    const int fixed = chain.index_of(pinned);
+    if (fixed >= 0 && fixed < static_cast<int>(chain.outputs.size())) {
+        return fixed;
+    }
+    return viewed;
+}
+
 void App::upload_view() {
     if (chain.outputs.empty()) {
         return;
@@ -37,7 +46,7 @@ void App::upload_view() {
     }
 
     ++revision;
-    const Value& value = chain.outputs[viewed];
+    const Value& value = chain.outputs[shown()];
     if (value.empty()) {
         return;
     }

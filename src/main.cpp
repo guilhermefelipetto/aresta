@@ -188,6 +188,12 @@ int main(int argc, char** argv) {
                         ImGui::TextDisabled("|");
                         ImGui::Text("%d, %d", app.canvas.hover_x, app.canvas.hover_y);
                     }
+                    const int fixed = app.chain.index_of(app.pinned);
+                    if (fixed >= 0) {
+                        ImGui::TextDisabled("|");
+                        ImGui::Text("preso em %d %s", fixed,
+                                    op_info(app.chain.stages[fixed].params).name);
+                    }
                 } else {
                     ImGui::TextDisabled("nenhuma imagem aberta");
                 }
@@ -279,17 +285,20 @@ int main(int argc, char** argv) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::TextDisabled("Estágio exibido");
+            const int shown = app.shown();
             if (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size())) {
-                const OpInfo info = op_info(app.chain.stages[app.viewed].params);
-                const ValueKind produced =
-                    (app.viewed < static_cast<int>(app.chain.outputs.size()) &&
-                     !app.chain.outputs[app.viewed].empty())
-                        ? app.chain.outputs[app.viewed].kind
-                        : info.output;
-                ImGui::Text("%d  %s", app.viewed, info.name);
-                ImGui::Text("tipo   %s", kind_name(produced));
-                if (produced != ValueKind::Color) {
+                ImGui::TextDisabled("Estágio selecionado");
+                ImGui::Text("%d  %s", app.viewed,
+                            op_info(app.chain.stages[app.viewed].params).name);
+                ImGui::Text("tipo   %s", kind_name(app.chain.kind_of(app.viewed)));
+            }
+            if (shown >= 0 && shown < static_cast<int>(app.chain.stages.size())) {
+                if (shown != app.viewed) {
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("Preso na tela");
+                    ImGui::Text("%d  %s", shown, op_info(app.chain.stages[shown].params).name);
+                }
+                if (app.chain.kind_of(shown) != ValueKind::Color) {
                     ImGui::Text("faixa  %.4f .. %.4f", app.view_lo, app.view_hi);
                 }
             }

@@ -89,7 +89,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
-- [x] aritmética entre estágios, e os fios da cadeia desenhados
+- [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
 - [x] vizinhança por raio, morfologia e componentes conexas
 - [x] histograma, com equalização global e local, alongamento e Otsu
 - [x] mapa escalar e de rótulo na tela, com colormap
