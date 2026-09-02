@@ -53,9 +53,12 @@ add_executable(aresta
     src/chain.cpp
     src/convolve.cpp
     src/expr.cpp
+    src/histogram.cpp
+    src/histogram_window.cpp
     src/image.cpp
     src/kernel.cpp
     src/kernel_window.cpp
+    src/morphology.cpp
     src/ops.cpp
     src/texture.cpp
     src/ui.cpp

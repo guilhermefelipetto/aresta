@@ -19,6 +19,10 @@ struct App {
     float view_lo = 0.0f;
     float view_hi = 0.0f;
 
+    // Sobe a cada reavaliação. Quem cacheia coisa derivada da cadeia compara
+    // com isso pra saber se precisa refazer.
+    int revision = 0;
+
     std::string path;
     std::string status;
 

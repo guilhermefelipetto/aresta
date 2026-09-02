@@ -46,6 +46,17 @@ A janela mostra a soma dos coeficientes e se a matriz é separável, que é a
 diferença entre `w*h` e `w+h` multiplicações por pixel. Aplicar não mexe na
 imagem: acrescenta um estágio de convolução na cadeia.
 
+## Histograma
+
+`Ferramentas > Histograma` mede o estágio que estiver na tela, não a imagem
+original. Em cor mostra R, G, B e luminância, com as faixas contadas em sRGB ou
+no valor linear guardado. Escala log por padrão, porque um fundo liso vira um
+pico que achata todo o resto contra o eixo.
+
+Junto vêm média, mediana, desvio e entropia, o nível que o Otsu escolheu
+marcado na curva, e três botões que acrescentam estágio na cadeia: equalizar
+pela acumulada, alongar contraste entre dois percentis, e binarizar no Otsu.
+
 ## Stack
 
 C++20 no núcleo, SDL2 pra janela e input, Dear ImGui pra interface, OpenGL 3.3
@@ -59,8 +70,8 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] buffer float32 linear, `Map<T>`, e as operações por pixel
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
-- [ ] vizinhança configurável (4, 8, 16) e morfologia
-- [ ] histograma e threshold automático
+- [x] vizinhança por raio, morfologia e componentes conexas
+- [x] histograma, com equalização, alongamento de contraste e Otsu
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [ ] pincel de semente e os algoritmos de grafo
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

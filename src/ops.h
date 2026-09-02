@@ -20,3 +20,13 @@ Map<int32_t> threshold(MapView<float> scalar, float level);
 
 // Pinta os rótulos por cima da cor, no lugar. Rótulo 0 não pinta nada.
 void overlay_labels(ImageView image, MapView<int32_t> labels, float opacity);
+
+// Equaliza pela distribuição acumulada. Em cor, equaliza a luminância e
+// reescala o RGB por ela, o que mexe no contraste sem torcer a cor.
+void equalize(MapView<float> scalar);
+void equalize(ImageView image);
+
+// Estica o intervalo entre dois percentis pra 0..1. Percentil em vez de mínimo
+// e máximo porque um pixel morto de ruído não pode definir a escala inteira.
+void stretch(MapView<float> scalar, float low_percentile, float high_percentile);
+void stretch(ImageView image, float low_percentile, float high_percentile);

@@ -17,6 +17,7 @@
 #include "app.h"
 #include "canvas.h"
 #include "chain.h"
+#include "histogram_window.h"
 #include "kernel_window.h"
 #include "ui.h"
 
@@ -75,6 +76,7 @@ int main(int argc, char** argv) {
     KernelLibrary kernel_library;
     kernel_library.load();
     KernelWindow kernel_window;
+    HistogramWindow histogram_window;
 
     auto open_path = [&](const std::string& file) {
         if (!app.open(file)) {
@@ -145,6 +147,7 @@ int main(int argc, char** argv) {
             }
             if (ImGui::BeginMenu("Ferramentas")) {
                 ImGui::MenuItem("Kernel...", nullptr, &kernel_window.open);
+                ImGui::MenuItem("Histograma...", nullptr, &histogram_window.open);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Janela")) {
@@ -289,8 +292,13 @@ int main(int argc, char** argv) {
                 if (ImGui::MenuItem("gama")) { app.chain.add(GammaOp{}); dirty = true; }
                 if (ImGui::MenuItem("inverter")) { app.chain.add(InvertOp{}); dirty = true; }
                 ImGui::Separator();
+                if (ImGui::MenuItem("equalizar")) { app.chain.add(EqualizeOp{}); dirty = true; }
+                if (ImGui::MenuItem("alongar")) { app.chain.add(StretchOp{}); dirty = true; }
+                ImGui::Separator();
                 if (ImGui::MenuItem("luminância")) { app.chain.add(LuminanceOp{}); dirty = true; }
                 if (ImGui::MenuItem("threshold")) { app.chain.add(ThresholdOp{}); dirty = true; }
+                if (ImGui::MenuItem("morfologia")) { app.chain.add(MorphologyOp{}); dirty = true; }
+                if (ImGui::MenuItem("componentes")) { app.chain.add(ComponentsOp{}); dirty = true; }
                 if (ImGui::MenuItem("overlay")) { app.chain.add(OverlayOp{}); dirty = true; }
                 ImGui::EndPopup();
             }
@@ -363,9 +371,27 @@ int main(int argc, char** argv) {
                 } else if (auto* op = std::get_if<GammaOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->gamma, 0.2f, 4.0f, "%.2f");
                 } else if (auto* op = std::get_if<ThresholdOp>(&stage.params)) {
-                    dirty |= ImGui::SliderFloat("##p", &op->level, 0.0f, 1.0f, "%.3f");
+                    ImGui::BeginDisabled(op->otsu);
+                    dirty |= ImGui::DragFloat("##p", &op->level, 0.002f, -20.0f, 20.0f, "%.4f");
+                    ImGui::EndDisabled();
+                    dirty |= ImGui::Checkbox("Otsu", &op->otsu);
                 } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->opacity, 0.0f, 1.0f, "%.2f");
+                } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
+                    dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
+                                                    "%.2f", "%.2f");
+                } else if (auto* op = std::get_if<ComponentsOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
+                } else if (auto* op = std::get_if<MorphologyOp>(&stage.params)) {
+                    int operation = static_cast<int>(op->operation);
+                    if (ImGui::Combo("##p", &operation,
+                                     "erosão\0dilatação\0abertura\0fechamento\0gradiente\0"
+                                     "top-hat\0black-hat\0")) {
+                        op->operation = static_cast<Morph>(operation);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 6.0f, "raio %.2f");
                 }
 
                 if (stage.id != 0) {
@@ -380,6 +406,8 @@ int main(int argc, char** argv) {
 
                 if (!stage.error.empty()) {
                     ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", stage.error.c_str());
+                } else if (!stage.note.empty()) {
+                    ImGui::TextDisabled("%s", stage.note.c_str());
                 }
 
                 ImGui::Unindent();
@@ -407,6 +435,7 @@ int main(int argc, char** argv) {
         ImGui::PopStyleVar();
 
         draw_kernel_window(kernel_window, kernel_library, app);
+        draw_histogram_window(histogram_window, app);
 
         ImGui::Render();
 

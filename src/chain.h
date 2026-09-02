@@ -6,6 +6,7 @@
 
 #include "convolve.h"
 #include "kernel.h"
+#include "morphology.h"
 #include "value.h"
 
 struct SourceOp {};
@@ -14,8 +15,18 @@ struct ContrastOp { float amount = 0.0f; };
 struct GammaOp { float gamma = 1.0f; };
 struct InvertOp {};
 struct LuminanceOp {};
-struct ThresholdOp { float level = 0.5f; };
+struct ThresholdOp { float level = 0.5f; bool otsu = false; };
 struct OverlayOp { float opacity = 0.5f; };
+struct MorphologyOp {
+    Morph operation = Morph::Erode;
+    float radius = 1.0f;
+};
+struct ComponentsOp { float radius = 1.5f; };
+struct EqualizeOp {};
+struct StretchOp {
+    float low = 0.5f;
+    float high = 99.5f;
+};
 struct ConvolveOp {
     Kernel kernel;
     Border border = Border::Clamp;
@@ -24,18 +35,24 @@ struct ConvolveOp {
 };
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, LuminanceOp,
-                              ThresholdOp, OverlayOp, ConvolveOp>;
+                              ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
+                              EqualizeOp, StretchOp>;
+
+// Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
+// entra em rótulo porque interpolar índice de região não quer dizer nada;
+// morfologia não entra em cor porque mínimo e máximo de RGB tratam canal por
+// canal e desfazem a cor.
+enum class Poly { None, ColorOrScalar, ScalarOrLabel };
 
 struct OpInfo {
     const char* name;
     int input_count;
     ValueKind inputs[2];
     ValueKind output;
-
-    // Convolução aceita cor ou escalar e devolve o mesmo tipo que recebeu.
-    // Rótulo não entra: interpolar índice de região não quer dizer nada.
-    bool polymorphic = false;
+    Poly poly = Poly::None;
 };
+
+bool poly_accepts(Poly poly, ValueKind kind);
 
 OpInfo op_info(const OpParams& params);
 
@@ -49,6 +66,10 @@ struct Stage {
     bool enabled = true;
 
     std::string error;
+
+    // Recado informativo do próprio operador, tipo o nível que o Otsu escolheu
+    // ou quantas componentes saíram. Limpo a cada avaliação.
+    std::string note;
 };
 
 struct Chain {

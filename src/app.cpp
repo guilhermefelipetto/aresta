@@ -36,6 +36,7 @@ void App::upload_view() {
         viewed = 0;
     }
 
+    ++revision;
     const Value& value = chain.outputs[viewed];
     if (value.empty()) {
         return;

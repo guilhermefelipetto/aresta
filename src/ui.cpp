@@ -2,9 +2,12 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <cmath>
 #include <system_error>
 
 #include <imgui_internal.h>
+
+#include "histogram.h"
 
 namespace {
 
@@ -110,4 +113,57 @@ void build_default_layout(ImGuiID dockspace) {
     ImGui::DockBuilderDockWindow("Cadeia", right_bottom);
     ImGui::DockBuilderDockWindow("Imagem", center);
     ImGui::DockBuilderFinish(dockspace);
+}
+
+void draw_histogram(const Histogram& histogram, bool log_scale, float height,
+                    const bool* channel_visible, float marker) {
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const float width = ImGui::GetContentRegionAvail().x;
+    if (width <= 1.0f || height <= 1.0f) {
+        return;
+    }
+    ImGui::Dummy(ImVec2(width, height));
+
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const ImVec2 max(origin.x + width, origin.y + height);
+    draw->AddRectFilled(origin, max, IM_COL32(18, 18, 20, 255));
+
+    if (histogram.empty() || histogram.peak <= 0.0f) {
+        return;
+    }
+
+    // Contagem de pixel tem cauda longa: sem log, o pico de um fundo liso
+    // achata todo o resto contra o eixo.
+    const float ceiling = log_scale ? std::log1p(histogram.peak) : histogram.peak;
+
+    static const ImU32 tints[4] = {IM_COL32(230, 90, 90, 190), IM_COL32(90, 210, 120, 190),
+                                   IM_COL32(100, 140, 240, 190), IM_COL32(190, 190, 200, 210)};
+
+    for (int c = 0; c < histogram.channels; ++c) {
+        if (channel_visible && !channel_visible[c]) {
+            continue;
+        }
+        const ImU32 tint = histogram.channels == 1 ? tints[3] : tints[c];
+        const float* counts = histogram.channel(c);
+        for (int i = 0; i < histogram.bins; ++i) {
+            const float raw = log_scale ? std::log1p(counts[i]) : counts[i];
+            const float share = raw / ceiling;
+            if (share <= 0.0f) {
+                continue;
+            }
+            const float x0 = origin.x + width * static_cast<float>(i) / histogram.bins;
+            const float x1 = origin.x + width * static_cast<float>(i + 1) / histogram.bins;
+            draw->AddRectFilled(ImVec2(x0, max.y - height * share), ImVec2(x1, max.y), tint);
+        }
+    }
+
+    if (std::isfinite(marker) && histogram.hi > histogram.lo) {
+        const float share = (marker - histogram.lo) / (histogram.hi - histogram.lo);
+        if (share >= 0.0f && share <= 1.0f) {
+            const float x = origin.x + width * share;
+            draw->AddLine(ImVec2(x, origin.y), ImVec2(x, max.y), IM_COL32(250, 200, 90, 220), 1.5f);
+        }
+    }
+
+    draw->AddRect(origin, max, IM_COL32(60, 60, 68, 255));
 }
