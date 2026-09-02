@@ -82,24 +82,29 @@ ConvolveOp current_op(const KernelWindow& window) {
     return op;
 }
 
-void push_to_chain(KernelWindow& window, App& app, bool reuse) {
+// Empurra o que está na janela pro estágio ligado. Enquanto houver ligação,
+// mexer num coeficiente já é mexer na cadeia.
+void write_back(KernelWindow& window, App& app) {
+    const int index = app.chain.index_of(window.editing);
+    if (index < 0) {
+        window.editing = -1;
+        return;
+    }
+    app.chain.stages[index].params = current_op(window);
+    app.evaluate();
+}
+
+void create_stage(KernelWindow& window, App& app) {
     if (app.source.empty()) {
         window.message = "Abra uma imagem primeiro.";
         return;
     }
-
-    int index = reuse ? app.chain.index_of(window.live_stage) : -1;
-    if (index < 0) {
-        const int viewed_id = app.viewed >= 0 &&
-                                      app.viewed < static_cast<int>(app.chain.stages.size())
-                                  ? app.chain.stages[app.viewed].id
-                                  : -1;
-        window.live_stage = app.chain.add(current_op(window), viewed_id);
-        index = app.chain.index_of(window.live_stage);
-    } else {
-        app.chain.stages[index].params = current_op(window);
-    }
-    app.viewed = index;
+    const int viewed_id =
+        (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size()))
+            ? app.chain.stages[app.viewed].id
+            : -1;
+    window.editing = app.chain.add(current_op(window), viewed_id);
+    app.viewed = app.chain.index_of(window.editing);
     app.evaluate();
 }
 
@@ -151,9 +156,33 @@ void draw_grid(KernelWindow& window) {
 
 }  // namespace
 
+void attach_kernel_window(KernelWindow& window, App& app, int stage_id) {
+    const int index = app.chain.index_of(stage_id);
+    if (index < 0) {
+        return;
+    }
+    const auto* op = std::get_if<ConvolveOp>(&app.chain.stages[index].params);
+    if (!op) {
+        return;
+    }
+
+    window.kernel = op->kernel;
+    window.border = op->border;
+    window.flip = op->flip;
+    window.normalize_on_apply = op->normalize;
+    window.editing = stage_id;
+    window.open = true;
+    window.message.clear();
+    app.viewed = index;
+    app.upload_view();
+}
+
 void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) {
     if (!window.open) {
         return;
+    }
+    if (window.editing >= 0 && app.chain.index_of(window.editing) < 0) {
+        window.editing = -1;
     }
 
     ImGui::SetNextWindowSize(ImVec2(1000.0f, 600.0f), ImGuiCond_FirstUseEver);
@@ -338,17 +367,22 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
             changed |= ImGui::Checkbox("espelhar o kernel (convolução estrita)", &window.flip);
             changed |= ImGui::Checkbox("normalizar antes de aplicar", &window.normalize_on_apply);
 
-            if (ImGui::Checkbox("preview ao vivo", &window.live)) {
-                if (window.live) {
-                    push_to_chain(window, app, false);
-                } else {
-                    window.live_stage = -1;
+            const int bound = app.chain.index_of(window.editing);
+            if (bound >= 0) {
+                ImGui::Text("editando o estágio %d", bound);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("soltar")) {
+                    window.editing = -1;
+                    window.message = "Solta. O que você mexer agora não vai pra cadeia.";
                 }
+            } else {
+                ImGui::TextDisabled("solta: nada do que você mexer vai pra cadeia");
             }
 
-            if (ImGui::Button("Aplicar na cadeia", ImVec2(-1.0f, 0.0f))) {
-                window.live_stage = -1;
-                push_to_chain(window, app, false);
+            if (ImGui::Button(bound >= 0 ? "Acrescentar como novo estágio"
+                                         : "Aplicar na cadeia",
+                              ImVec2(-1.0f, 0.0f))) {
+                create_stage(window, app);
                 window.message = "Estágio de convolução acrescentado.";
             }
         }
@@ -360,8 +394,8 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
     }
     ImGui::EndChild();
 
-    if (changed && window.live) {
-        push_to_chain(window, app, true);
+    if (changed && window.editing >= 0) {
+        write_back(window, app);
     }
 
     ImGui::End();

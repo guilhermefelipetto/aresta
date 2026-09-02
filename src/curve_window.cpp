@@ -25,27 +25,27 @@ CurveOp current_op(const CurveWindow& window) {
     return op;
 }
 
-void push_to_chain(CurveWindow& window, App& app, bool reuse) {
+void write_back(CurveWindow& window, App& app) {
+    const int index = app.chain.index_of(window.editing);
+    if (index < 0) {
+        window.editing = -1;
+        return;
+    }
+    app.chain.stages[index].params = current_op(window);
+    app.evaluate();
+}
+
+void create_stage(CurveWindow& window, App& app) {
     if (app.source.empty()) {
         window.message = "Abra uma imagem primeiro.";
         return;
     }
-
-    int index = reuse ? app.chain.index_of(window.live_stage) : -1;
-    if (index < 0) {
-        const int viewed_id = (app.viewed >= 0 &&
-                               app.viewed < static_cast<int>(app.chain.stages.size()))
-                                  ? app.chain.stages[app.viewed].id
-                                  : -1;
-        window.live_stage = app.chain.add(current_op(window), viewed_id);
-        index = app.chain.index_of(window.live_stage);
-    } else {
-        app.chain.stages[index].params = current_op(window);
-    }
-    if (index < 0) {
-        return;
-    }
-    app.viewed = index;
+    const int viewed_id =
+        (app.viewed >= 0 && app.viewed < static_cast<int>(app.chain.stages.size()))
+            ? app.chain.stages[app.viewed].id
+            : -1;
+    window.editing = app.chain.add(current_op(window), viewed_id);
+    app.viewed = app.chain.index_of(window.editing);
     app.evaluate();
 }
 
@@ -98,9 +98,34 @@ void draw_plot(const CurveWindow& window, const std::vector<float>& curve,
 
 }  // namespace
 
+void attach_curve_window(CurveWindow& window, App& app, int stage_id) {
+    const int index = app.chain.index_of(stage_id);
+    if (index < 0) {
+        return;
+    }
+    const auto* op = std::get_if<CurveOp>(&app.chain.stages[index].params);
+    if (!op) {
+        return;
+    }
+
+    std::snprintf(window.expression, sizeof(window.expression), "%s", op->expression);
+    window.a = op->a;
+    window.b = op->b;
+    window.c = op->c;
+    window.on_srgb = op->on_srgb;
+    window.editing = stage_id;
+    window.open = true;
+    window.message.clear();
+    app.viewed = index;
+    app.upload_view();
+}
+
 void draw_curve_window(CurveWindow& window, App& app) {
     if (!window.open) {
         return;
+    }
+    if (window.editing >= 0 && app.chain.index_of(window.editing) < 0) {
+        window.editing = -1;
     }
 
     ImGui::SetNextWindowSize(ImVec2(940.0f, 560.0f), ImGuiCond_FirstUseEver);
@@ -187,24 +212,28 @@ void draw_curve_window(CurveWindow& window, App& app) {
         }
 
         ImGui::Spacing();
-        if (ImGui::Checkbox("preview ao vivo", &window.live)) {
-            if (window.live) {
-                push_to_chain(window, app, false);
-            } else {
-                window.live_stage = -1;
+        const int bound = app.chain.index_of(window.editing);
+        if (bound >= 0) {
+            ImGui::Text("editando o estágio %d", bound);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("soltar")) {
+                window.editing = -1;
+                window.message = "Solta. O que você mexer agora não vai pra cadeia.";
             }
+        } else {
+            ImGui::TextDisabled("solta: nada do que você mexer vai pra cadeia");
         }
-        if (ImGui::Button("Aplicar na cadeia", ImVec2(-1.0f, 0.0f))) {
-            window.live_stage = -1;
-            push_to_chain(window, app, false);
+        if (ImGui::Button(bound >= 0 ? "Acrescentar como novo estágio" : "Aplicar na cadeia",
+                          ImVec2(-1.0f, 0.0f))) {
+            create_stage(window, app);
             window.message = "Estágio de curva acrescentado.";
         }
         if (!window.message.empty()) {
             ImGui::TextWrapped("%s", window.message.c_str());
         }
 
-        if (changed && window.live && window.error.empty()) {
-            push_to_chain(window, app, true);
+        if (changed && window.editing >= 0 && window.error.empty()) {
+            write_back(window, app);
         }
     }
     ImGui::EndGroup();

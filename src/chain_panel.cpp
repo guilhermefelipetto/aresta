@@ -285,10 +285,6 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 ImGui::PopID();
             }
 
-            if (aberto && std::get_if<ConvolveOp>(&stage.params)) {
-                ImGui::TextDisabled("editar em Ferramentas > Kernel");
-            }
-
             if (aberto) {
                 ImGui::SetNextItemWidth(-1.0f);
                 if (auto* op = std::get_if<ExposureOp>(&stage.params)) {
@@ -389,7 +385,6 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                                               "escala %.3f");
                 } else if (auto* op = std::get_if<CurveOp>(&stage.params)) {
                     dirty |= ImGui::InputText("##p", op->expression, sizeof(op->expression));
-                    ImGui::TextDisabled("editar em Ferramentas > Curva");
                 } else if (auto* op = std::get_if<ClaheOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->tiles, 2, 32, "%d pedaços por lado");
                     ImGui::SetNextItemWidth(-1.0f);
@@ -416,6 +411,14 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             if (aberto && stage.id != 0) {
                 if (ImGui::Checkbox("ativo", &stage.enabled)) {
                     dirty = true;
+                }
+                const bool tem_janela = std::get_if<ConvolveOp>(&stage.params) ||
+                                        std::get_if<CurveOp>(&stage.params);
+                if (tem_janela) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("editar")) {
+                        app.edit_request = stage.id;
+                    }
                 }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("remover")) {

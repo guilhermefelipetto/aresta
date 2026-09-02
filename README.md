@@ -46,6 +46,11 @@ A janela mostra a soma dos coeficientes e se a matriz é separável, que é a
 diferença entre `w*h` e `w+h` multiplicações por pixel. Aplicar não mexe na
 imagem: acrescenta um estágio de convolução na cadeia.
 
+O caminho de volta também existe: o botão `editar` na linha do estágio liga a
+janela naquele estágio, e daí em diante mexer num coeficiente é mexer na
+cadeia. Clicar em `editar` noutro estágio só troca o que a janela está
+dirigindo. A janela da curva funciona igual.
+
 ## Curva
 
 `Ferramentas > Curva` é a família de transformação de intensidade: negativo,

@@ -14,9 +14,10 @@ struct CurveWindow {
     bool on_srgb = true;
 
     std::string error;
-    bool live = false;
-    int live_stage = -1;
+    int editing = -1;
     std::string message;
 };
+
+void attach_curve_window(CurveWindow& window, App& app, int stage_id);
 
 void draw_curve_window(CurveWindow& window, App& app);

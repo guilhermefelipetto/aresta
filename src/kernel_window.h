@@ -15,8 +15,9 @@ struct KernelWindow {
     bool flip = false;
     bool normalize_on_apply = false;
 
-    bool live = false;
-    int live_stage = -1;
+    // Id do estágio que a janela está dirigindo, ou -1 pra ela estar só
+    // montando um kernel solto.
+    int editing = -1;
 
     int generator = 0;
     float sigma = 1.2f;
@@ -39,5 +40,9 @@ struct KernelWindow {
     int preset = 0;
     std::string message;
 };
+
+// Liga a janela num estágio de convolução que já existe, trazendo os
+// parâmetros dele pra dentro.
+void attach_kernel_window(KernelWindow& window, App& app, int stage_id);
 
 void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app);

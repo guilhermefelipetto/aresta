@@ -31,6 +31,10 @@ struct App {
     // selecionado abre os parâmetros.
     bool chain_compact = true;
 
+    // Id do estágio que pediu pra ser editado na janela dele. O painel só
+    // levanta a mão; quem sabe qual janela abrir é o laço principal.
+    int edit_request = -1;
+
     std::string path;
     std::string status;
 

@@ -316,6 +316,19 @@ int main(int argc, char** argv) {
         draw_chain_panel(app, chain_dirty);
         chain_dirty = false;
 
+        if (app.edit_request >= 0) {
+            const int index = app.chain.index_of(app.edit_request);
+            if (index >= 0) {
+                const OpParams& params = app.chain.stages[index].params;
+                if (std::get_if<ConvolveOp>(&params)) {
+                    attach_kernel_window(kernel_window, app, app.edit_request);
+                } else if (std::get_if<CurveOp>(&params)) {
+                    attach_curve_window(curve_window, app, app.edit_request);
+                }
+            }
+            app.edit_request = -1;
+        }
+
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Imagem");
         draw_canvas(app.canvas, app.texture);
