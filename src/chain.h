@@ -34,6 +34,14 @@ struct CombineOp {
     Combine operation = Combine::Subtract;
     float scale = 1.0f;
 };
+struct RankOp {
+    Rank kind = Rank::Median;
+    float radius = 1.5f;
+    float alpha = 0.4f;
+};
+struct MatchOp {};
+struct BitPlaneOp { int plane = 7; };
+struct ComposeOp {};
 struct CurveOp {
     char expression[128] = "v";
     float a = 1.0f;
@@ -58,7 +66,8 @@ struct ConvolveOp {
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
-                              EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp>;
+                              EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp,
+                              RankOp, MatchOp, BitPlaneOp, ComposeOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;
@@ -69,16 +78,20 @@ enum class Poly {
     ColorOrScalar,
     ScalarOrLabel,
 
-    // Duas entradas de qualquer tipo, contanto que sejam o mesmo. A checagem de
-    // igualdade fica na avaliação, porque na hora de ligar ainda não se sabe o
-    // que cada lado vai produzir.
+    // Entradas de qualquer tipo, contanto que sejam todas o mesmo. A checagem
+    // de igualdade fica na avaliação, porque na hora de ligar ainda não se sabe
+    // o que cada lado vai produzir.
     Pair,
+
+    // Igual ao Pair, mas sem rótulo: casar histograma de mapa de índice de
+    // região não quer dizer nada.
+    PairTone,
 };
 
 struct OpInfo {
     const char* name;
     int input_count;
-    ValueKind inputs[2];
+    ValueKind inputs[3];
     ValueKind output;
     Poly poly = Poly::None;
 };

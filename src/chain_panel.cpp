@@ -109,6 +109,10 @@ bool draw_operation_items(App& app) {
         {"clahe", ClaheOp{}, "um estágio de cor ou escalar"},
         {"curva", CurveOp{}, "um estágio de cor ou escalar"},
         {"combinar", CombineOp{}, "dois estágios do mesmo tipo"},
+        {"casar histograma", MatchOp{}, "dois estágios de cor ou escalar"},
+        {"ordem", RankOp{}, "um estágio de cor ou escalar"},
+        {"plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
+        {"compor", ComposeOp{}, "três estágios escalares"},
         {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
         {"canal", ChannelOp{}, "um estágio de cor"},
@@ -355,6 +359,23 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         ImGui::TextDisabled("soma %.4f", op->weight[0] + op->weight[1] +
                                                              op->weight[2]);
                     }
+                } else if (auto* op = std::get_if<RankOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "mediana\0mínimo\0máximo\0ponto médio\0"
+                                     "média alfa-cortada\0")) {
+                        op->kind = static_cast<Rank>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    if (op->kind == Rank::AlphaTrimmed) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##alfa", &op->alpha, 0.0f, 0.9f,
+                                                    "corta %.0f%%");
+                    }
+                } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
                 } else if (auto* op = std::get_if<CombineOp>(&stage.params)) {
                     int operation = static_cast<int>(op->operation);
                     if (ImGui::Combo("##p", &operation,

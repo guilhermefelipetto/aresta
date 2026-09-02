@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 
+#include "adjacency.h"
 #include "image.h"
 #include "map.h"
 
@@ -67,3 +68,26 @@ bool apply_curve(ImageView image, const char* expression, float a, float b, floa
                  std::string* error);
 bool apply_curve(MapView<float> scalar, const char* expression, float a, float b, float c,
                  std::string* error);
+
+enum class Rank { Median, Min, Max, Midpoint, AlphaTrimmed };
+
+const char* rank_name(Rank kind);
+
+// Estatística de ordem na vizinhança. Mediana não é convolução: nenhum jogo de
+// pesos produz "o do meio depois de ordenar", e é justamente isso que faz ela
+// tirar sal e pimenta sem borrar a borda.
+Image rank_filter(ImageView image, const Adjacency& adjacency, Rank kind, float alpha);
+Map<float> rank_filter(MapView<float> scalar, const Adjacency& adjacency, Rank kind, float alpha);
+
+// Reescreve a distribuição de `image` pra parecer com a de `reference`, em vez
+// de achatar como a equalização faz.
+void match_histogram(ImageView image, ImageView reference);
+void match_histogram(MapView<float> scalar, MapView<float> reference);
+
+// Quantiza em 8 bits e devolve 1 onde o bit `plane` está ligado. Plano 7 é o
+// mais significativo.
+Map<float> bit_plane(ImageView image, int plane);
+Map<float> bit_plane(MapView<float> scalar, int plane);
+
+// Três escalares viram os canais de uma imagem. O inverso do `canal`.
+Image compose(MapView<float> r, MapView<float> g, MapView<float> b);

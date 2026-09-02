@@ -7,6 +7,7 @@
 
 #include "color.h"
 #include "expr.h"
+#include "parallel.h"
 
 namespace {
 
@@ -662,4 +663,251 @@ bool apply_curve(MapView<float> scalar, const char* expression, float a, float b
         }
     }
     return true;
+}
+
+const char* rank_name(Rank kind) {
+    switch (kind) {
+        case Rank::Median: return "mediana";
+        case Rank::Min: return "mínimo";
+        case Rank::Max: return "máximo";
+        case Rank::Midpoint: return "ponto médio";
+        case Rank::AlphaTrimmed: return "média alfa-cortada";
+    }
+    return "?";
+}
+
+namespace {
+
+float rank_of(std::vector<float>& janela, Rank kind, float alpha) {
+    const std::size_t n = janela.size();
+    switch (kind) {
+        case Rank::Median: {
+            const std::size_t meio = n / 2;
+            std::nth_element(janela.begin(), janela.begin() + meio, janela.end());
+            return janela[meio];
+        }
+        case Rank::Min:
+            return *std::min_element(janela.begin(), janela.end());
+        case Rank::Max:
+            return *std::max_element(janela.begin(), janela.end());
+        case Rank::Midpoint:
+            return (*std::min_element(janela.begin(), janela.end()) +
+                    *std::max_element(janela.begin(), janela.end())) *
+                   0.5f;
+        default: {
+            // Joga fora os `corte` menores e os `corte` maiores e tira a média
+            // do que sobra: pega sal e pimenta e ruído gaussiano de uma vez.
+            const std::size_t corte =
+                std::min(n / 2 - (n % 2 == 0 ? 1 : 0), static_cast<std::size_t>(alpha * n * 0.5f));
+            std::sort(janela.begin(), janela.end());
+            float soma = 0.0f;
+            std::size_t conta = 0;
+            for (std::size_t i = corte; i + corte < n; ++i) {
+                soma += janela[i];
+                ++conta;
+            }
+            return conta > 0 ? soma / static_cast<float>(conta) : janela[n / 2];
+        }
+    }
+}
+
+}  // namespace
+
+Image rank_filter(ImageView image, const Adjacency& adjacency, Rank kind, float alpha) {
+    Image out(image.width, image.height);
+    const ImageView dst = out.view();
+
+    parallel_for(0, image.height, [&](int y0, int y1) {
+        std::vector<float> janela;
+        janela.reserve(adjacency.offsets.size() + 1);
+        for (int y = y0; y < y1; ++y) {
+            float* row = dst.row(y);
+            for (int x = 0; x < image.width; ++x) {
+                for (int canal = 0; canal < 3; ++canal) {
+                    janela.clear();
+                    janela.push_back(image.at(x, y)[canal]);
+                    for (const Adjacency::Offset& offset : adjacency.offsets) {
+                        const int sx = std::clamp(x + offset.dx, 0, image.width - 1);
+                        const int sy = std::clamp(y + offset.dy, 0, image.height - 1);
+                        janela.push_back(image.at(sx, sy)[canal]);
+                    }
+                    row[x * 4 + canal] = rank_of(janela, kind, alpha);
+                }
+                row[x * 4 + 3] = image.at(x, y)[3];
+            }
+        }
+    });
+    return out;
+}
+
+Map<float> rank_filter(MapView<float> scalar, const Adjacency& adjacency, Rank kind, float alpha) {
+    Map<float> out(scalar.width, scalar.height);
+    const MapView<float> dst = out.view();
+
+    parallel_for(0, scalar.height, [&](int y0, int y1) {
+        std::vector<float> janela;
+        janela.reserve(adjacency.offsets.size() + 1);
+        for (int y = y0; y < y1; ++y) {
+            float* row = dst.row(y);
+            for (int x = 0; x < scalar.width; ++x) {
+                janela.clear();
+                janela.push_back(scalar.at(x, y));
+                for (const Adjacency::Offset& offset : adjacency.offsets) {
+                    const int sx = std::clamp(x + offset.dx, 0, scalar.width - 1);
+                    const int sy = std::clamp(y + offset.dy, 0, scalar.height - 1);
+                    janela.push_back(scalar.at(sx, sy));
+                }
+                row[x] = rank_of(janela, kind, alpha);
+            }
+        }
+    });
+    return out;
+}
+
+namespace {
+
+// A acumulada do alvo, invertida: pra cada nível da acumulada da origem, qual
+// valor do alvo tem aquela mesma fração de pixels abaixo dele.
+struct MatchCurve {
+    float lo = 0.0f;
+    float span = 1.0f;
+    std::vector<float> mapped = std::vector<float>(tone_bins, 0.0f);
+
+    float apply(float value) const {
+        const int bin =
+            std::clamp(static_cast<int>((value - lo) / span * tone_bins), 0, tone_bins - 1);
+        return mapped[static_cast<std::size_t>(bin)];
+    }
+};
+
+std::vector<double> cdf_of(const std::vector<float>& values, float* lo, float* hi) {
+    scan_range(values.size(), [&](std::size_t i) { return values[i]; }, lo, hi);
+    const float span = (*hi > *lo) ? (*hi - *lo) : 1.0f;
+
+    std::vector<double> counts(tone_bins, 0.0);
+    for (float value : values) {
+        counts[static_cast<std::size_t>(
+            std::clamp(static_cast<int>((value - *lo) / span * tone_bins), 0, tone_bins - 1))] +=
+            1.0;
+    }
+    double running = 0.0;
+    for (double& count : counts) {
+        running += count;
+        count = running / static_cast<double>(values.size());
+    }
+    return counts;
+}
+
+MatchCurve match_curve(const std::vector<float>& source, const std::vector<float>& reference) {
+    MatchCurve curve;
+    float hi_source = 0.0f;
+    const std::vector<double> cdf_source = cdf_of(source, &curve.lo, &hi_source);
+    curve.span = (hi_source > curve.lo) ? (hi_source - curve.lo) : 1.0f;
+
+    float lo_ref = 0.0f;
+    float hi_ref = 0.0f;
+    const std::vector<double> cdf_ref = cdf_of(reference, &lo_ref, &hi_ref);
+    const float span_ref = (hi_ref > lo_ref) ? (hi_ref - lo_ref) : 1.0f;
+
+    // As duas acumuladas são crescentes, então uma varredura casada basta: pra
+    // cada faixa da origem, anda no alvo até alcançar a mesma fração.
+    int alvo = 0;
+    for (int i = 0; i < tone_bins; ++i) {
+        while (alvo < tone_bins - 1 && cdf_ref[static_cast<std::size_t>(alvo)] <
+                                           cdf_source[static_cast<std::size_t>(i)]) {
+            ++alvo;
+        }
+        curve.mapped[static_cast<std::size_t>(i)] =
+            lo_ref + (static_cast<float>(alvo) + 0.5f) / tone_bins * span_ref;
+    }
+    return curve;
+}
+
+std::vector<float> values_of(MapView<float> scalar) {
+    std::vector<float> values(static_cast<std::size_t>(scalar.width) * scalar.height);
+    std::size_t at = 0;
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            values[at++] = row[x];
+        }
+    }
+    return values;
+}
+
+}  // namespace
+
+void match_histogram(MapView<float> scalar, MapView<float> reference) {
+    const MatchCurve curve = match_curve(values_of(scalar), values_of(reference));
+    for (int y = 0; y < scalar.height; ++y) {
+        float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            row[x] = curve.apply(row[x]);
+        }
+    }
+}
+
+void match_histogram(ImageView image, ImageView reference) {
+    const std::vector<float> source = luma_of(image);
+    const MatchCurve curve = match_curve(source, luma_of(reference));
+    std::size_t at = 0;
+    for (int y = 0; y < image.height; ++y) {
+        float* p = image.row(y);
+        for (int x = 0; x < image.width; ++x, p += 4) {
+            retint(p, curve.apply(source[at++]));
+        }
+    }
+}
+
+namespace {
+
+Map<float> plane_of(const std::vector<float>& values, int width, int height, int plane) {
+    Map<float> out(width, height);
+    float lo = 0.0f;
+    float hi = 0.0f;
+    scan_range(values.size(), [&](std::size_t i) { return values[i]; }, &lo, &hi);
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+
+    const int bit = std::clamp(plane, 0, 7);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const int level = std::clamp(static_cast<int>((values[i] - lo) / span * 255.0f + 0.5f), 0,
+                                     255);
+        out.data[i] = ((level >> bit) & 1) ? 1.0f : 0.0f;
+    }
+    return out;
+}
+
+}  // namespace
+
+Map<float> bit_plane(ImageView image, int plane) {
+    // Quantiza sobre o valor codificado, que é onde "o bit k" quer dizer alguma
+    // coisa: em linear os níveis não são igualmente espaçados na percepção.
+    std::vector<float> values(static_cast<std::size_t>(image.width) * image.height);
+    std::size_t at = 0;
+    for (int y = 0; y < image.height; ++y) {
+        const float* p = image.row(y);
+        for (int x = 0; x < image.width; ++x, p += 4) {
+            values[at++] = linear_to_srgb(std::clamp(luminance(p[0], p[1], p[2]), 0.0f, 1.0f));
+        }
+    }
+    return plane_of(values, image.width, image.height, plane);
+}
+
+Map<float> bit_plane(MapView<float> scalar, int plane) {
+    return plane_of(values_of(scalar), scalar.width, scalar.height, plane);
+}
+
+Image compose(MapView<float> r, MapView<float> g, MapView<float> b) {
+    Image out(r.width, r.height);
+    const ImageView dst = out.view();
+    for (int y = 0; y < r.height; ++y) {
+        float* p = dst.row(y);
+        for (int x = 0; x < r.width; ++x, p += 4) {
+            p[0] = r.at(x, y);
+            p[1] = g.at(std::min(x, g.width - 1), std::min(y, g.height - 1));
+            p[2] = b.at(std::min(x, b.width - 1), std::min(y, b.height - 1));
+            p[3] = 1.0f;
+        }
+    }
+    return out;
 }

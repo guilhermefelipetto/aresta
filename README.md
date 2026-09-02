@@ -100,6 +100,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] buffer float32 linear, `Map<T>`, e as operações por pixel
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
+- [x] filtros de ordem, casamento de histograma, planos de bit
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
 - [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
 - [x] vizinhança por raio, morfologia e componentes conexas

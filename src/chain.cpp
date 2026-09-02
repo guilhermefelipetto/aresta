@@ -30,6 +30,33 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         *note = combine_name(op->operation);
         return out;
     }
+    if (const auto* op = std::get_if<RankOp>(&params)) {
+        const Adjacency adjacency = adjacency_by_radius(op->radius);
+        *note = std::to_string(adjacency.offsets.size() + 1) + " amostras por pixel";
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(rank_filter(in[0]->scalar.view(), adjacency, op->kind, op->alpha));
+        }
+        return make_color(rank_filter(in[0]->color.view(), adjacency, op->kind, op->alpha));
+    }
+    if (std::get_if<MatchOp>(&params)) {
+        Value out = in[0]->clone();
+        if (out.kind == ValueKind::Scalar) {
+            match_histogram(out.scalar.view(), in[1]->scalar.view());
+        } else {
+            match_histogram(out.color.view(), in[1]->color.view());
+        }
+        return out;
+    }
+    if (const auto* op = std::get_if<BitPlaneOp>(&params)) {
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(bit_plane(in[0]->scalar.view(), op->plane));
+        }
+        return make_scalar(bit_plane(in[0]->color.view(), op->plane));
+    }
+    if (std::get_if<ComposeOp>(&params)) {
+        return make_color(compose(in[0]->scalar.view(), in[1]->scalar.view(),
+                                  in[2]->scalar.view()));
+    }
     if (const auto* op = std::get_if<CurveOp>(&params)) {
         Value out = in[0]->clone();
         std::string error;
@@ -146,6 +173,8 @@ bool poly_accepts(Poly poly, ValueKind kind) {
             return kind == ValueKind::Scalar || kind == ValueKind::Label;
         case Poly::Pair:
             return true;
+        case Poly::PairTone:
+            return kind != ValueKind::Label;
         case Poly::None:
             break;
     }
@@ -184,6 +213,17 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, CombineOp>) {
                 return {"combinar", 2, {ValueKind::Color, ValueKind::Color}, ValueKind::Color,
                         Poly::Pair};
+            } else if constexpr (std::is_same_v<T, RankOp>) {
+                return {"ordem", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, MatchOp>) {
+                return {"casar histograma", 2, {ValueKind::Color, ValueKind::Color},
+                        ValueKind::Color, Poly::PairTone};
+            } else if constexpr (std::is_same_v<T, BitPlaneOp>) {
+                return {"plano de bit", 1, {ValueKind::Color}, ValueKind::Scalar,
+                        Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, ComposeOp>) {
+                return {"compor", 3, {ValueKind::Scalar, ValueKind::Scalar, ValueKind::Scalar},
+                        ValueKind::Color};
             } else if constexpr (std::is_same_v<T, CurveOp>) {
                 return {"curva", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, ClaheOp>) {
@@ -302,7 +342,7 @@ void Chain::evaluate(const Image& source) {
         }
 
         const OpInfo info = op_info(stage.params);
-        Value* in[2] = {nullptr, nullptr};
+        Value* in[3] = {nullptr, nullptr, nullptr};
 
         for (int k = 0; k < info.input_count; ++k) {
             const int id = (k < static_cast<int>(stage.inputs.size())) ? stage.inputs[k] : -1;
@@ -328,10 +368,15 @@ void Chain::evaluate(const Image& source) {
             in[k] = &outputs[idx];
         }
 
-        if (stage.error.empty() && info.poly == Poly::Pair && in[0] && in[1] &&
-            in[0]->kind != in[1]->kind) {
-            stage.error = std::string("tipos diferentes: ") + kind_name(in[0]->kind) + " e " +
-                          kind_name(in[1]->kind);
+        if (stage.error.empty() &&
+            (info.poly == Poly::Pair || info.poly == Poly::PairTone)) {
+            for (int k = 1; k < info.input_count; ++k) {
+                if (in[0] && in[k] && in[0]->kind != in[k]->kind) {
+                    stage.error = std::string("tipos diferentes: ") + kind_name(in[0]->kind) +
+                                  " e " + kind_name(in[k]->kind);
+                    break;
+                }
+            }
         }
 
         if (!stage.error.empty()) {
