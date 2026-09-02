@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "convolve.h"
+#include "ops.h"
 #include "kernel.h"
 #include "morphology.h"
 #include "value.h"
@@ -14,7 +15,7 @@ struct ExposureOp { float stops = 0.0f; };
 struct ContrastOp { float amount = 0.0f; };
 struct GammaOp { float gamma = 1.0f; };
 struct InvertOp {};
-struct LuminanceOp {};
+struct ChannelOp { Channel channel = Channel::Luma; };
 struct ThresholdOp { float level = 0.5f; bool otsu = false; };
 struct OverlayOp { float opacity = 0.5f; };
 struct MorphologyOp {
@@ -34,7 +35,7 @@ struct ConvolveOp {
     bool normalize = false;
 };
 
-using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, LuminanceOp,
+using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
                               EqualizeOp, StretchOp>;
 
@@ -53,6 +54,13 @@ struct OpInfo {
 };
 
 bool poly_accepts(Poly poly, ValueKind kind);
+
+struct Chain;
+
+// Quando falta o tipo intermediário, diz qual operação resolveria em um passo
+// só. Uma ponte, nunca duas: montar cadeia inteira no lugar de alguém é magia
+// demais pra uma bancada.
+bool bridge_for(const Chain& chain, const OpParams& params, OpParams* bridge);
 
 OpInfo op_info(const OpParams& params);
 

@@ -71,13 +71,36 @@ void invert(ImageView image) {
     }
 }
 
-Map<float> luminance_of(ImageView image) {
+const char* channel_name(Channel channel) {
+    switch (channel) {
+        case Channel::Luma: return "luminância";
+        case Channel::Red: return "vermelho";
+        case Channel::Green: return "verde";
+        case Channel::Blue: return "azul";
+        case Channel::Max: return "máximo";
+        case Channel::Min: return "mínimo";
+        case Channel::Saturation: return "saturação";
+    }
+    return "?";
+}
+
+Map<float> channel_of(ImageView image, Channel channel) {
     Map<float> result(image.width, image.height);
     for (int y = 0; y < image.height; ++y) {
         const float* p = image.row(y);
         float* out = result.view().row(y);
         for (int x = 0; x < image.width; ++x, p += 4) {
-            out[x] = luminance(p[0], p[1], p[2]);
+            const float hi = std::max({p[0], p[1], p[2]});
+            const float lo = std::min({p[0], p[1], p[2]});
+            switch (channel) {
+                case Channel::Luma: out[x] = luminance(p[0], p[1], p[2]); break;
+                case Channel::Red: out[x] = p[0]; break;
+                case Channel::Green: out[x] = p[1]; break;
+                case Channel::Blue: out[x] = p[2]; break;
+                case Channel::Max: out[x] = hi; break;
+                case Channel::Min: out[x] = lo; break;
+                case Channel::Saturation: out[x] = hi > 1e-6f ? (hi - lo) / hi : 0.0f; break;
+            }
         }
     }
     return result;

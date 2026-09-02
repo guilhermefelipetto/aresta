@@ -31,8 +31,8 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         invert(out.color.view());
         return out;
     }
-    if (std::get_if<LuminanceOp>(&params)) {
-        return make_scalar(luminance_of(in[0]->color.view()));
+    if (const auto* op = std::get_if<ChannelOp>(&params)) {
+        return make_scalar(channel_of(in[0]->color.view(), op->channel));
     }
     if (const auto* op = std::get_if<ThresholdOp>(&params)) {
         float level = op->level;
@@ -122,8 +122,8 @@ OpInfo op_info(const OpParams& params) {
                 return {"gama", 1, {ValueKind::Color}, ValueKind::Color};
             } else if constexpr (std::is_same_v<T, InvertOp>) {
                 return {"inverter", 1, {ValueKind::Color}, ValueKind::Color};
-            } else if constexpr (std::is_same_v<T, LuminanceOp>) {
-                return {"luminância", 1, {ValueKind::Color}, ValueKind::Scalar};
+            } else if constexpr (std::is_same_v<T, ChannelOp>) {
+                return {"canal", 1, {ValueKind::Color}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ThresholdOp>) {
                 return {"threshold", 1, {ValueKind::Scalar}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, ConvolveOp>) {
@@ -276,4 +276,28 @@ void Chain::evaluate(const Image& source) {
         }
         outputs[i] = apply_op(stage.params, in, &stage.note);
     }
+}
+
+bool bridge_for(const Chain& chain, const OpParams& params, OpParams* bridge) {
+    const OpInfo info = op_info(params);
+    if (info.input_count != 1 || chain.can_add(params)) {
+        return false;
+    }
+
+    // Otsu na ponte porque um limiar automático dá resultado na hora; trocar
+    // pra manual depois é um clique.
+    const OpParams candidates[] = {ChannelOp{}, ThresholdOp{0.5f, true}};
+    for (const OpParams& candidate : candidates) {
+        if (!chain.can_add(candidate)) {
+            continue;
+        }
+        const ValueKind produced = op_info(candidate).output;
+        const bool serve = (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
+                                                     : (produced == info.inputs[0]);
+        if (serve) {
+            *bridge = candidate;
+            return true;
+        }
+    }
+    return false;
 }

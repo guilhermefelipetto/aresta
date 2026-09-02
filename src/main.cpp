@@ -42,7 +42,7 @@ bool draw_operation_items(App& app) {
         {"equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
         {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
-        {"luminância", LuminanceOp{}, "um estágio de cor"},
+        {"canal", ChannelOp{}, "um estágio de cor"},
         {"threshold", ThresholdOp{}, "um estágio escalar, tipo luminância"},
         {"morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
         {"componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
@@ -60,13 +60,32 @@ bool draw_operation_items(App& app) {
             ImGui::Separator();
             continue;
         }
+
         const bool ready = app.chain.can_add(entry.params);
-        if (ImGui::MenuItem(entry.label, nullptr, false, ready)) {
-            app.viewed = app.chain.index_of(app.chain.add(entry.params, viewed_id));
+        OpParams bridge = SourceOp{};
+        const bool bridged = !ready && bridge_for(app.chain, entry.params, &bridge);
+        const char* via = bridged ? op_info(bridge).name : nullptr;
+        char shortcut[48] = {};
+        if (via) {
+            std::snprintf(shortcut, sizeof(shortcut), "via %s", via);
+        }
+
+        if (ImGui::MenuItem(entry.label, via ? shortcut : nullptr, false, ready || bridged)) {
+            int input = viewed_id;
+            if (bridged) {
+                input = app.chain.add(bridge, viewed_id);
+            }
+            app.viewed = app.chain.index_of(app.chain.add(entry.params, input));
             added = true;
         }
-        if (!ready && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("precisa de %s antes", entry.needs);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            if (bridged) {
+                ImGui::SetTooltip("acrescenta um estágio de %s antes, e deixa ele na cadeia\n"
+                                  "pra você trocar o canal ou o limiar depois",
+                                  via);
+            } else if (!ready) {
+                ImGui::SetTooltip("precisa de %s antes", entry.needs);
+            }
         }
     }
     return added;
@@ -434,6 +453,14 @@ int main(int argc, char** argv) {
                     dirty |= ImGui::Checkbox("Otsu", &op->otsu);
                 } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->opacity, 0.0f, 1.0f, "%.2f");
+                } else if (auto* op = std::get_if<ChannelOp>(&stage.params)) {
+                    int channel = static_cast<int>(op->channel);
+                    if (ImGui::Combo("##p", &channel,
+                                     "luminância\0vermelho\0verde\0azul\0máximo\0mínimo\0"
+                                     "saturação\0")) {
+                        op->channel = static_cast<Channel>(channel);
+                        dirty = true;
+                    }
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
                                                     "%.2f", "%.2f");

@@ -13,7 +13,13 @@ void adjust_gamma(ImageView image, float gamma);
 
 void invert(ImageView image);
 
-Map<float> luminance_of(ImageView image);
+// Reduções de cor pra um número por pixel. Luminância é a mais usada, mas não
+// é a melhor sempre: objeto colorido contra fundo de brilho parecido separa
+// melhor por canal ou por saturação.
+enum class Channel { Luma, Red, Green, Blue, Max, Min, Saturation };
+
+const char* channel_name(Channel channel);
+Map<float> channel_of(ImageView image, Channel channel);
 
 // Acima do nível vira 1, abaixo vira 0. Um rótulo binário ainda é rótulo.
 Map<int32_t> threshold(MapView<float> scalar, float level);
