@@ -20,6 +20,7 @@
 #include "chain.h"
 #include "chain_panel.h"
 #include "curve_window.h"
+#include "export_window.h"
 #include "histogram_window.h"
 #include "kernel_window.h"
 #include "ui.h"
@@ -81,6 +82,7 @@ int main(int argc, char** argv) {
     KernelWindow kernel_window;
     HistogramWindow histogram_window;
     CurveWindow curve_window;
+    ExportWindow export_window;
 
     auto open_path = [&](const std::string& file) {
         if (!app.open(file)) {
@@ -125,6 +127,9 @@ int main(int argc, char** argv) {
             if (ImGui::IsKeyPressed(ImGuiKey_O)) {
                 open_requested = true;
             }
+            if (ImGui::IsKeyPressed(ImGuiKey_E) && !app.source.empty()) {
+                open_export_window(export_window, app);
+            }
             if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
                 rodando = false;
             }
@@ -134,6 +139,9 @@ int main(int argc, char** argv) {
             if (ImGui::BeginMenu("Arquivo")) {
                 if (ImGui::MenuItem("Abrir...", "Ctrl+O")) {
                     open_requested = true;
+                }
+                if (ImGui::MenuItem("Exportar como...", "Ctrl+E", false, !app.source.empty())) {
+                    open_export_window(export_window, app);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Sair", "Ctrl+Q")) {
@@ -317,6 +325,7 @@ int main(int argc, char** argv) {
         draw_kernel_window(kernel_window, kernel_library, app);
         draw_histogram_window(histogram_window, app);
         draw_curve_window(curve_window, app);
+        draw_export_window(export_window, app);
 
         ImGui::Render();
 

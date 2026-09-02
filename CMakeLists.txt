@@ -55,6 +55,8 @@ add_executable(aresta
     src/convolve.cpp
     src/curve_window.cpp
     src/expr.cpp
+    src/export.cpp
+    src/export_window.cpp
     src/histogram.cpp
     src/histogram_window.cpp
     src/image.cpp

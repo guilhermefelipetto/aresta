@@ -75,6 +75,18 @@ foto com fundo liso e comprimido isso é fatal: dá pra ter 80% dos pixels num
 aquilo. A local escapa disso dando mapeamentos diferentes em lugares
 diferentes.
 
+## Exportando
+
+`Arquivo > Exportar como` (Ctrl+E) abre uma janela que pergunta qual estágio
+salvar, não só o que está na tela, e se você quer **como aparece** (RGBA de 8
+bits, com colormap, pra figura) ou os **valores crus** (o número que o estágio
+carrega, sem colormap e sem cortar).
+
+PNG, JPEG, BMP e TGA guardam o que aparece. Pros valores crus tem PFM (float32
+exato), Netpbm (PGM de 16 bits), CSV com nove dígitos, e NPY, que o
+`numpy.load` abre direto. A pasta padrão sai do XDG, então cai em Downloads
+mesmo com o sistema em outro idioma.
+
 ## Stack
 
 C++20 no núcleo, SDL2 pra janela e input, Dear ImGui pra interface, OpenGL 3.3
@@ -95,6 +107,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [ ] pincel de semente e os algoritmos de grafo
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir
-- [ ] salvar projeto, exportar
+- [x] exportar estágio: PNG, JPEG, BMP, TGA, Netpbm, PFM, CSV, NPY
+- [ ] salvar e carregar o projeto
 
 Desenvolvido no Ubuntu 24.04.
