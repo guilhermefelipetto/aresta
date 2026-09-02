@@ -7,3 +7,4 @@ CLAUDE.md
 third_party/*/
 docs/
 imgui.ini
+layout-*.ini

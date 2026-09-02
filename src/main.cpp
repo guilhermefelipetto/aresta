@@ -58,12 +58,18 @@ int main(int argc, char** argv) {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     apply_theme();
 
+    // O ImGui guarda o ponteiro, não a string, então ela precisa viver o
+    // programa inteiro.
+    const std::string ini = layout_path();
+    ImGui::GetIO().IniFilename = ini.c_str();
+    forget_old_layouts();
+
     ImGui_ImplSDL2_InitForOpenGL(window, gl);
     ImGui_ImplOpenGL3_Init("#version 150");
 
     // Sem ini gravado, o layout vem do código. Com ini, respeita o que o usuário
     // arrastou da última vez.
-    bool layout_pending = !std::filesystem::exists(ImGui::GetIO().IniFilename);
+    bool layout_pending = !std::filesystem::exists(ini);
 
     App app;
     KernelLibrary kernel_library;

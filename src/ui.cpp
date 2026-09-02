@@ -1,6 +1,8 @@
 #include "ui.h"
 
+#include <cstdlib>
 #include <filesystem>
+#include <system_error>
 
 #include <imgui_internal.h>
 
@@ -22,7 +24,32 @@ void load_font() {
     }
 }
 
+std::filesystem::path config_dir() {
+    const char* home = std::getenv("HOME");
+    return home ? std::filesystem::path(home) / ".config" / "aresta"
+                : std::filesystem::path(".");
+}
+
 }  // namespace
+
+std::string layout_path() {
+    const std::filesystem::path dir = config_dir();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    return (dir / ("layout-" + std::to_string(layout_version) + ".ini")).string();
+}
+
+void forget_old_layouts() {
+    std::error_code ec;
+    const std::filesystem::path keep = std::filesystem::path(layout_path()).filename();
+    for (const auto& entry : std::filesystem::directory_iterator(config_dir(), ec)) {
+        const std::string name = entry.path().filename().string();
+        if (name.rfind("layout-", 0) == 0 && name.size() > 11 &&
+            name.compare(name.size() - 4, 4, ".ini") == 0 && entry.path().filename() != keep) {
+            std::filesystem::remove(entry.path(), ec);
+        }
+    }
+}
 
 void apply_theme() {
     load_font();
