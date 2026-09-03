@@ -73,44 +73,35 @@ void invert(ImageView image) {
     }
 }
 
-const char* channel_name(Channel channel) {
-    switch (channel) {
-        case Channel::Luma: return "luminância";
-        case Channel::Red: return "vermelho";
-        case Channel::Green: return "verde";
-        case Channel::Blue: return "azul";
-        case Channel::Max: return "máximo";
-        case Channel::Min: return "mínimo";
-        case Channel::Saturation: return "saturação";
-    }
-    return "?";
-}
-
-Map<float> channel_of(ImageView image, Channel channel, const float* weights, bool on_srgb) {
+Map<float> channel_of(ImageView image, Space space, int component, const float* weights,
+                      bool on_srgb) {
     Map<float> result(image.width, image.height);
+    const bool luma = space == Space::RGB && component == channel_luma;
+
     for (int y = 0; y < image.height; ++y) {
         const float* p = image.row(y);
         float* out = result.view().row(y);
         for (int x = 0; x < image.width; ++x, p += 4) {
-            float rgb[3] = {p[0], p[1], p[2]};
-            if (on_srgb) {
-                for (float& c : rgb) {
-                    c = linear_to_srgb(std::clamp(c, 0.0f, 1.0f));
+            if (luma) {
+                float rgb[3] = {p[0], p[1], p[2]};
+                if (on_srgb) {
+                    for (float& v : rgb) {
+                        v = linear_to_srgb(std::clamp(v, 0.0f, 1.0f));
+                    }
                 }
+                out[x] = weights[0] * rgb[0] + weights[1] * rgb[1] + weights[2] * rgb[2];
+                continue;
             }
-            const float hi = std::max({rgb[0], rgb[1], rgb[2]});
-            const float lo = std::min({rgb[0], rgb[1], rgb[2]});
-            switch (channel) {
-                case Channel::Luma:
-                    out[x] = weights[0] * rgb[0] + weights[1] * rgb[1] + weights[2] * rgb[2];
-                    break;
-                case Channel::Red: out[x] = rgb[0]; break;
-                case Channel::Green: out[x] = rgb[1]; break;
-                case Channel::Blue: out[x] = rgb[2]; break;
-                case Channel::Max: out[x] = hi; break;
-                case Channel::Min: out[x] = lo; break;
-                case Channel::Saturation: out[x] = hi > 1e-6f ? (hi - lo) / hi : 0.0f; break;
+
+            float valor[3];
+            if (space == Space::RGB && !on_srgb) {
+                valor[0] = p[0];
+                valor[1] = p[1];
+                valor[2] = p[2];
+            } else {
+                to_space(space, p, valor);
             }
+            out[x] = valor[std::clamp(component, 0, 2)];
         }
     }
     return result;
@@ -897,17 +888,108 @@ Map<float> bit_plane(MapView<float> scalar, int plane) {
     return plane_of(values_of(scalar), scalar.width, scalar.height, plane);
 }
 
-Image compose(MapView<float> r, MapView<float> g, MapView<float> b) {
-    Image out(r.width, r.height);
+Image compose(Space space, MapView<float> a, MapView<float> b, MapView<float> c) {
+    Image out(a.width, a.height);
     const ImageView dst = out.view();
-    for (int y = 0; y < r.height; ++y) {
+    for (int y = 0; y < a.height; ++y) {
         float* p = dst.row(y);
-        for (int x = 0; x < r.width; ++x, p += 4) {
-            p[0] = r.at(x, y);
-            p[1] = g.at(std::min(x, g.width - 1), std::min(y, g.height - 1));
-            p[2] = b.at(std::min(x, b.width - 1), std::min(y, b.height - 1));
+        for (int x = 0; x < a.width; ++x, p += 4) {
+            const float entrada[3] = {a.at(x, y),
+                                      b.at(std::min(x, b.width - 1), std::min(y, b.height - 1)),
+                                      c.at(std::min(x, c.width - 1), std::min(y, c.height - 1))};
+            float rgb[3];
+            from_space(space, entrada, rgb);
+            p[0] = rgb[0];
+            p[1] = rgb[1];
+            p[2] = rgb[2];
             p[3] = 1.0f;
         }
     }
+    return out;
+}
+
+namespace {
+
+void sobel_at(ImageView image, Space space, int x, int y, float dx[3], float dy[3]) {
+    static const float kx[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
+    static const float ky[3][3] = {{-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
+
+    for (int c = 0; c < 3; ++c) {
+        dx[c] = 0.0f;
+        dy[c] = 0.0f;
+    }
+    for (int j = -1; j <= 1; ++j) {
+        for (int i = -1; i <= 1; ++i) {
+            const int sx = std::clamp(x + i, 0, image.width - 1);
+            const int sy = std::clamp(y + j, 0, image.height - 1);
+            float valor[3];
+            to_space(space, image.at(sx, sy), valor);
+            for (int c = 0; c < 3; ++c) {
+                dx[c] += valor[c] * kx[j + 1][i + 1];
+                dy[c] += valor[c] * ky[j + 1][i + 1];
+            }
+        }
+    }
+}
+
+}  // namespace
+
+Map<float> color_gradient(ImageView image, Space space) {
+    Map<float> out(image.width, image.height);
+    const MapView<float> dst = out.view();
+
+    parallel_for(0, image.height, [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            float* row = dst.row(y);
+            for (int x = 0; x < image.width; ++x) {
+                float dx[3];
+                float dy[3];
+                sobel_at(image, space, x, y, dx, dy);
+
+                const float gxx = dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2];
+                const float gyy = dy[0] * dy[0] + dy[1] * dy[1] + dy[2] * dy[2];
+                const float gxy = dx[0] * dy[0] + dx[1] * dy[1] + dx[2] * dy[2];
+
+                // Direção em que a variação é máxima, e a variação nela.
+                const float theta = 0.5f * std::atan2(2.0f * gxy, gxx - gyy);
+                const float f = 0.5f * ((gxx + gyy) + (gxx - gyy) * std::cos(2.0f * theta) +
+                                        2.0f * gxy * std::sin(2.0f * theta));
+                row[x] = std::sqrt(std::max(f, 0.0f));
+            }
+        }
+    });
+    return out;
+}
+
+Map<float> color_distance(ImageView image, Space space, const float reference[3]) {
+    // A referência vem do seletor de cor, que fala sRGB; o buffer é linear.
+    const float linear[3] = {srgb_to_linear(std::clamp(reference[0], 0.0f, 1.0f)),
+                             srgb_to_linear(std::clamp(reference[1], 0.0f, 1.0f)),
+                             srgb_to_linear(std::clamp(reference[2], 0.0f, 1.0f))};
+    float alvo[3];
+    to_space(space, linear, alvo);
+
+    Map<float> out(image.width, image.height);
+    const MapView<float> dst = out.view();
+    parallel_for(0, image.height, [&](int y0, int y1) {
+        for (int y = y0; y < y1; ++y) {
+            float* row = dst.row(y);
+            for (int x = 0; x < image.width; ++x) {
+                float valor[3];
+                to_space(space, image.at(x, y), valor);
+                float soma = 0.0f;
+                for (int c = 0; c < 3; ++c) {
+                    float d = valor[c] - alvo[c];
+                    // Matiz é circular: 0.95 e 0.02 estão perto, não longe.
+                    if (c == 0 && (space == Space::HSV || space == Space::HSI)) {
+                        d = std::fabs(d);
+                        d = std::min(d, 1.0f - d);
+                    }
+                    soma += d * d;
+                }
+                row[x] = std::sqrt(soma);
+            }
+        }
+    });
     return out;
 }

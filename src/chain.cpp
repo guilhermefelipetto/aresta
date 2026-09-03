@@ -120,9 +120,18 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return make_scalar(bit_plane(in[0]->color.view(), op->plane));
     }
-    if (std::get_if<ComposeOp>(&params)) {
-        return make_color(compose(in[0]->scalar.view(), in[1]->scalar.view(),
+    if (const auto* op = std::get_if<ComposeOp>(&params)) {
+        return make_color(compose(op->space, in[0]->scalar.view(), in[1]->scalar.view(),
                                   in[2]->scalar.view()));
+    }
+    if (const auto* op = std::get_if<ColorGradientOp>(&params)) {
+        return make_scalar(color_gradient(in[0]->color.view(), op->space));
+    }
+    if (const auto* op = std::get_if<ColorDistanceOp>(&params)) {
+        return make_scalar(color_distance(in[0]->color.view(), op->space, op->reference));
+    }
+    if (const auto* op = std::get_if<PseudoColorOp>(&params)) {
+        return make_color(pseudo_color(in[0]->scalar.view(), op->map));
     }
     if (const auto* op = std::get_if<CurveOp>(&params)) {
         Value out = in[0]->clone();
@@ -158,8 +167,8 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return out;
     }
     if (const auto* op = std::get_if<ChannelOp>(&params)) {
-        return make_scalar(
-            channel_of(in[0]->color.view(), op->channel, op->weight, op->on_srgb));
+        return make_scalar(channel_of(in[0]->color.view(), op->space, op->component, op->weight,
+                                      op->on_srgb));
     }
     if (const auto* op = std::get_if<ThresholdOp>(&params)) {
         float level = op->level;
@@ -310,6 +319,12 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, BitPlaneOp>) {
                 return {"plano de bit", 1, {ValueKind::Color}, ValueKind::Scalar,
                         Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, ColorGradientOp>) {
+                return {"gradiente de cor", 1, {ValueKind::Color}, ValueKind::Scalar};
+            } else if constexpr (std::is_same_v<T, ColorDistanceOp>) {
+                return {"distância de cor", 1, {ValueKind::Color}, ValueKind::Scalar};
+            } else if constexpr (std::is_same_v<T, PseudoColorOp>) {
+                return {"pseudo-cor", 1, {ValueKind::Scalar}, ValueKind::Color};
             } else if constexpr (std::is_same_v<T, ComposeOp>) {
                 return {"compor", 3, {ValueKind::Scalar, ValueKind::Scalar, ValueKind::Scalar},
                         ValueKind::Color};
@@ -513,13 +528,20 @@ std::string stage_summary(const OpParams& params) {
     } else if (const auto* op = std::get_if<GammaOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "gama %.2f", op->gamma);
     } else if (const auto* op = std::get_if<ChannelOp>(&params)) {
-        if (op->channel == Channel::Luma) {
+        if (op->space == Space::RGB && op->component == channel_luma) {
             std::snprintf(buffer, sizeof(buffer), "luminância %.3f/%.3f/%.3f%s", op->weight[0],
                           op->weight[1], op->weight[2], op->on_srgb ? ", sRGB" : "");
         } else {
-            std::snprintf(buffer, sizeof(buffer), "%s%s", channel_name(op->channel),
-                          op->on_srgb ? ", sRGB" : "");
+            std::snprintf(buffer, sizeof(buffer), "%s, %s", space_name(op->space),
+                          component_name(op->space, op->component));
         }
+    } else if (const auto* op = std::get_if<ComposeOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s", space_name(op->space));
+    } else if (const auto* op = std::get_if<ColorGradientOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "em %s", space_name(op->space));
+    } else if (const auto* op = std::get_if<ColorDistanceOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "em %s, alvo %.2f %.2f %.2f", space_name(op->space),
+                      op->reference[0], op->reference[1], op->reference[2]);
     } else if (const auto* op = std::get_if<ThresholdOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), op->otsu ? "Otsu" : "acima de %.4f", op->level);
     } else if (const auto* op = std::get_if<MorphologyOp>(&params)) {

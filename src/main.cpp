@@ -269,7 +269,7 @@ int main(int argc, char** argv) {
             ImGui::TextDisabled("Mapa de cor");
             ImGui::SetNextItemWidth(-1.0f);
             int colormap = static_cast<int>(app.colormap);
-            if (ImGui::Combo("##colormap", &colormap, "cinza\0viridis\0")) {
+            if (ImGui::Combo("##colormap", &colormap, "cinza\0viridis\0magma\0turbo\0quente\0")) {
                 app.colormap = static_cast<Colormap>(colormap);
                 app.upload_view();
             }

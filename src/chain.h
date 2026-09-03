@@ -19,7 +19,8 @@ struct ContrastOp { float amount = 0.0f; };
 struct GammaOp { float gamma = 1.0f; };
 struct InvertOp {};
 struct ChannelOp {
-    Channel channel = Channel::Luma;
+    Space space = Space::RGB;
+    int component = channel_luma;
 
     // Rec. 709, que é o que combina com o buffer linear.
     float weight[3] = {0.2126f, 0.7152f, 0.0722f};
@@ -93,7 +94,13 @@ struct FreqFilterOp {
     Pad pad = Pad::Mirror;
 };
 struct BitPlaneOp { int plane = 7; };
-struct ComposeOp {};
+struct ColorGradientOp { Space space = Space::Lab; };
+struct ColorDistanceOp {
+    Space space = Space::Lab;
+    float reference[3] = {0.9f, 0.5f, 0.6f};
+};
+struct PseudoColorOp { Colormap map = Colormap::Viridis; };
+struct ComposeOp { Space space = Space::RGB; };
 struct CurveOp {
     char expression[128] = "v";
     float a = 1.0f;
@@ -121,7 +128,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp,
                               RankOp, MatchOp, BitPlaneOp, ComposeOp, SpectrumOp,
                               FreqFilterOp, NoiseOp, MeanOp, AdaptiveOp,
-                              AdaptiveMedianOp, DegradeOp, RestoreOp>;
+                              AdaptiveMedianOp, DegradeOp, RestoreOp, ColorGradientOp,
+                              ColorDistanceOp, PseudoColorOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

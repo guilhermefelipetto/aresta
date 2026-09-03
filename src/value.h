@@ -29,9 +29,15 @@ Value make_color(Image image);
 Value make_scalar(Map<float> map);
 Value make_label(Map<int32_t> map);
 
-enum class Colormap { Gray, Viridis };
+enum class Colormap { Gray, Viridis, Magma, Turbo, Hot };
+
+const char* colormap_name(Colormap map);
 
 // Escalar é normalizado pelo próprio intervalo, que volta em lo/hi pra UI poder
 // mostrar contra o que a imagem foi normalizada.
 std::unique_ptr<unsigned char[]> to_display_rgba8(const Value& value, Colormap colormap,
                                                   float* lo, float* hi);
+
+// Escalar vira cor pelo mapa escolhido, virando estágio da cadeia em vez de só
+// jeito de exibir.
+Image pseudo_color(MapView<float> scalar, Colormap map);

@@ -1,5 +1,7 @@
 #include "value.h"
 
+#include "color.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -8,22 +10,23 @@
 
 namespace {
 
-// Sete paradas amostradas do viridis. Interpolar entre elas erra pouco e evita
-// carregar uma tabela de 256 linhas.
-constexpr float viridis[7][3] = {
-    {0.267f, 0.005f, 0.329f}, {0.283f, 0.141f, 0.458f}, {0.254f, 0.265f, 0.530f},
-    {0.164f, 0.471f, 0.558f}, {0.135f, 0.659f, 0.518f}, {0.478f, 0.821f, 0.318f},
-    {0.993f, 0.906f, 0.144f},
+// Sete paradas de cada mapa. Interpolar entre elas erra pouco e evita carregar
+// quatro tabelas de 256 linhas.
+constexpr float colormaps[5][7][3] = {
+    {{0, 0, 0}, {0.167f, 0.167f, 0.167f}, {0.333f, 0.333f, 0.333f}, {0.5f, 0.5f, 0.5f},
+     {0.667f, 0.667f, 0.667f}, {0.833f, 0.833f, 0.833f}, {1, 1, 1}},
+    {{0.267f, 0.005f, 0.329f}, {0.283f, 0.141f, 0.458f}, {0.254f, 0.265f, 0.530f},
+     {0.164f, 0.471f, 0.558f}, {0.135f, 0.659f, 0.518f}, {0.478f, 0.821f, 0.318f},
+     {0.993f, 0.906f, 0.144f}},
+    {{0.001f, 0.000f, 0.014f}, {0.185f, 0.068f, 0.372f}, {0.451f, 0.122f, 0.506f},
+     {0.716f, 0.215f, 0.475f}, {0.933f, 0.410f, 0.353f}, {0.993f, 0.681f, 0.381f},
+     {0.987f, 0.991f, 0.750f}},
+    {{0.190f, 0.072f, 0.232f}, {0.223f, 0.577f, 0.902f}, {0.196f, 0.900f, 0.616f},
+     {0.720f, 0.980f, 0.222f}, {0.988f, 0.717f, 0.115f}, {0.913f, 0.309f, 0.043f},
+     {0.479f, 0.012f, 0.011f}},
+    {{0, 0, 0}, {0.4f, 0, 0}, {0.8f, 0, 0}, {1.0f, 0.2f, 0}, {1.0f, 0.6f, 0}, {1.0f, 0.95f, 0.2f},
+     {1, 1, 1}},
 };
-
-void viridis_at(float t, float* rgb) {
-    t = std::clamp(t, 0.0f, 1.0f) * 6.0f;
-    const int i = std::min(static_cast<int>(t), 5);
-    const float f = t - static_cast<float>(i);
-    for (int c = 0; c < 3; ++c) {
-        rgb[c] = viridis[i][c] + (viridis[i + 1][c] - viridis[i][c]) * f;
-    }
-}
 
 // Cor por rótulo pela razão áurea: índices vizinhos caem longe no círculo de
 // matiz, que é o que faz regiões coladas ficarem distinguíveis.
@@ -54,6 +57,55 @@ void label_color(int32_t label, unsigned char* rgb) {
 }
 
 }  // namespace
+
+void colormap_at(Colormap map, float t, float* rgb) {
+    const auto& stops = colormaps[static_cast<int>(map)];
+    t = std::clamp(t, 0.0f, 1.0f) * 6.0f;
+    const int i = std::min(static_cast<int>(t), 5);
+    const float f = t - static_cast<float>(i);
+    for (int c = 0; c < 3; ++c) {
+        rgb[c] = stops[i][c] + (stops[i + 1][c] - stops[i][c]) * f;
+    }
+}
+
+const char* colormap_name(Colormap map) {
+    switch (map) {
+        case Colormap::Gray: return "cinza";
+        case Colormap::Viridis: return "viridis";
+        case Colormap::Magma: return "magma";
+        case Colormap::Turbo: return "turbo";
+        case Colormap::Hot: return "quente";
+    }
+    return "?";
+}
+
+Image pseudo_color(MapView<float> scalar, Colormap map) {
+    float lo = std::numeric_limits<float>::max();
+    float hi = std::numeric_limits<float>::lowest();
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            lo = std::min(lo, row[x]);
+            hi = std::max(hi, row[x]);
+        }
+    }
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+
+    Image out(scalar.width, scalar.height);
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        float* p = out.view().row(y);
+        for (int x = 0; x < scalar.width; ++x, p += 4) {
+            float rgb[3];
+            colormap_at(map, (row[x] - lo) / span, rgb);
+            for (int c = 0; c < 3; ++c) {
+                p[c] = srgb_to_linear(std::clamp(rgb[c], 0.0f, 1.0f));
+            }
+            p[3] = 1.0f;
+        }
+    }
+    return out;
+}
 
 const char* kind_name(ValueKind kind) {
     switch (kind) {
@@ -161,15 +213,10 @@ std::unique_ptr<unsigned char[]> to_display_rgba8(const Value& value, Colormap c
         for (std::size_t i = 0; i < total; ++i) {
             const float t = (src[i] - min_value) / span;
             unsigned char* dst = out.get() + i * 4;
-            if (colormap == Colormap::Viridis) {
-                float rgb[3];
-                viridis_at(t, rgb);
-                for (int c = 0; c < 3; ++c) {
-                    dst[c] = static_cast<unsigned char>(std::clamp(rgb[c], 0.0f, 1.0f) * 255.0f);
-                }
-            } else {
-                const auto level = static_cast<unsigned char>(std::clamp(t, 0.0f, 1.0f) * 255.0f);
-                dst[0] = dst[1] = dst[2] = level;
+            float rgb[3];
+            colormap_at(colormap, t, rgb);
+            for (int c = 0; c < 3; ++c) {
+                dst[c] = static_cast<unsigned char>(std::clamp(rgb[c], 0.0f, 1.0f) * 255.0f);
             }
             dst[3] = 255;
         }

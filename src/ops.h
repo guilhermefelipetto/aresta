@@ -6,6 +6,7 @@
 #include "adjacency.h"
 #include "image.h"
 #include "map.h"
+#include "spaces.h"
 
 // Todas operam em espaço linear, no lugar, e não cortam o resultado. Quem
 // corta é a conversão pra 8 bits, na saída.
@@ -15,18 +16,16 @@ void adjust_gamma(ImageView image, float gamma);
 
 void invert(ImageView image);
 
-// Reduções de cor pra um número por pixel. Luminância é a mais usada, mas não
-// é a melhor sempre: objeto colorido contra fundo de brilho parecido separa
-// melhor por canal ou por saturação.
-enum class Channel { Luma, Red, Green, Blue, Max, Min, Saturation };
+// Reduz a cor a um número por pixel. `component` de 0 a 2 escolhe dentro do
+// espaço; 3 vale só no RGB e pede a luminância ponderada por `weights`.
+//
+// `on_srgb` também só vale no RGB: Rec. 709 é definido sobre linear, mas o
+// clássico Rec. 601 (0.299/0.587/0.114) é definido sobre gama, e é o que o
+// cvtColor do OpenCV faz. Os outros espaços já sabem sozinhos onde moram.
+constexpr int channel_luma = 3;
 
-const char* channel_name(Channel channel);
-
-// `weights` só é usado por Channel::Luma. `on_srgb` decide se a redução vê o
-// valor linear guardado ou o codificado: Rec. 709 é definido sobre linear, mas
-// o clássico Rec. 601 (0.299/0.587/0.114) é definido sobre gama, e é o que o
-// cvtColor do OpenCV faz.
-Map<float> channel_of(ImageView image, Channel channel, const float* weights, bool on_srgb);
+Map<float> channel_of(ImageView image, Space space, int component, const float* weights,
+                      bool on_srgb);
 
 // Acima do nível vira 1, abaixo vira 0. Um rótulo binário ainda é rótulo.
 Map<int32_t> threshold(MapView<float> scalar, float level);
@@ -89,5 +88,14 @@ void match_histogram(MapView<float> scalar, MapView<float> reference);
 Map<float> bit_plane(ImageView image, int plane);
 Map<float> bit_plane(MapView<float> scalar, int plane);
 
-// Três escalares viram os canais de uma imagem. O inverso do `canal`.
-Image compose(MapView<float> r, MapView<float> g, MapView<float> b);
+// Três escalares viram uma imagem, lidos como componentes do espaço escolhido.
+// O inverso do `canal`.
+Image compose(Space space, MapView<float> a, MapView<float> b, MapView<float> c);
+
+// Gradiente de cor do Di Zenzo: trata os três canais como um vetor só, em vez
+// de pegar o maior gradiente por canal. Onde os canais discordam de direção,
+// os dois dão respostas bem diferentes.
+Map<float> color_gradient(ImageView image, Space space);
+
+// Distância até uma cor de referência, no espaço escolhido.
+Map<float> color_distance(ImageView image, Space space, const float reference[3]);
