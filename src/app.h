@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,7 +39,15 @@ struct App {
     int edit_request = -1;
 
     std::string path;
+
+    // Erro: fica na barra até alguém trocar, porque erro que some sozinho
+    // passa despercebido.
     std::string status;
+
+    // Recado de coisa que deu certo. Some sozinho, e não pode tapar a barra:
+    // ela existe pra mostrar o pixel sob o cursor e o estágio preso.
+    std::string flash;
+    std::chrono::steady_clock::time_point flash_until{};
 
     // Onde esse documento foi salvo, e o texto do projeto na última vez que
     // ele bateu com o disco. Comparar com o atual é o que diz se tem coisa não
@@ -62,6 +71,10 @@ struct App {
     // trabalho. Quem está carregando projeto ou religando a imagem que faltou
     // pede pra manter, senão a imagem entra e leva o projeto junto.
     bool open(const std::string& file, bool keep_chain = false);
+
+    void say(const std::string& message);
+    bool flashing() const;
+
     void evaluate();
     void upload_view();
 };

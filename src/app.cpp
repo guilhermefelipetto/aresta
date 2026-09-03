@@ -63,6 +63,16 @@ void App::upload_view() {
                  value.width(), value.height());
 }
 
+void App::say(const std::string& message) {
+    flash = message;
+    flash_until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    status.clear();
+}
+
+bool App::flashing() const {
+    return !flash.empty() && std::chrono::steady_clock::now() < flash_until;
+}
+
 std::string App::label() const {
     if (!project_path.empty()) {
         return std::filesystem::path(project_path).filename().string();

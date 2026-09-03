@@ -94,6 +94,7 @@ int main(int argc, char** argv) {
     bool chain_dirty = false;
     int fechar_aba = -1;
     int fechar_confirmado = -1;
+    bool sair_pedido = false;
     char project_input[1024] = {};
     char attach_input[1024] = {};
     std::string missing_image;
@@ -148,7 +149,7 @@ int main(int argc, char** argv) {
         d.evaluate();
         d.upload_view();
         set_title();
-        d.status = "Imagem trocada, cadeia mantida.";
+        d.say("Imagem trocada, cadeia mantida.");
         return true;
     };
 
@@ -165,7 +166,9 @@ int main(int argc, char** argv) {
         std::snprintf(attach_input, sizeof(attach_input), "%s", r.wanted_image.c_str());
         detach_tools();
         mark_saved();
-        d.status = r.missing_image ? std::string() : "Projeto carregado.";
+        if (!r.missing_image) {
+            d.say("Projeto carregado.");
+        }
         return true;
     };
 
@@ -178,7 +181,7 @@ int main(int argc, char** argv) {
         }
         d.project_path = file;
         mark_saved();
-        d.status = "Projeto salvo em " + file;
+        d.say("Projeto salvo em " + file);
         return true;
     };
 
@@ -190,6 +193,11 @@ int main(int argc, char** argv) {
             && file.compare(file.size() - n, std::string::npos, project_suffix()) == 0;
         return eh_projeto ? open_project(file, nova_aba) : open_path(file, nova_aba);
     };
+
+    // Antes de abrir qualquer coisa: sem isso o app vazio já nasceria com
+    // asterisco, e pior, isso aqui embaixo do argv apagaria o estado sujo que
+    // trocar a imagem pela linha de comando cria de propósito.
+    mark_saved();
 
     if (argc > 1) {
         const std::string arg = argv[1];
@@ -208,10 +216,6 @@ int main(int argc, char** argv) {
             open_path(arg, true);
         }
     }
-
-    // Sem isso o app vazio já nasceria com asterisco, porque saved_state estaria
-    // em branco e qualquer projeto tem cabeçalho.
-    mark_saved();
 
     char path_input[1024] = {};
     char image_input[1024] = {};
@@ -233,11 +237,11 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&ev)) {
             ImGui_ImplSDL2_ProcessEvent(&ev);
             if (ev.type == SDL_QUIT) {
-                rodando = false;
+                sair_pedido = true;
             }
             if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_CLOSE
                 && ev.window.windowID == SDL_GetWindowID(window)) {
-                rodando = false;
+                sair_pedido = true;
             }
             if (ev.type == SDL_DROPFILE) {
                 open_any(ev.drop.file, true);
@@ -260,7 +264,7 @@ int main(int argc, char** argv) {
                 open_export_window(export_window, app);
             }
             if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
-                rodando = false;
+                sair_pedido = true;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_S)) {
                 if (io.KeyShift || app.project_path.empty()) {
@@ -295,7 +299,7 @@ int main(int argc, char** argv) {
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Sair", "Ctrl+Q")) {
-                    rodando = false;
+                    sair_pedido = true;
                 }
                 ImGui::EndMenu();
             }
@@ -353,6 +357,12 @@ int main(int argc, char** argv) {
                         ImGui::Text("preso em %d %s", fixed,
                                     op_info(app.chain.stages[fixed].params).name);
                     }
+                    if (app.flashing()) {
+                        ImGui::TextDisabled("|");
+                        ImGui::TextDisabled("%s", app.flash.c_str());
+                    }
+                } else if (app.flashing()) {
+                    ImGui::TextDisabled("%s", app.flash.c_str());
                 } else {
                     ImGui::TextDisabled("nenhuma imagem aberta");
                 }
@@ -724,6 +734,38 @@ int main(int argc, char** argv) {
                     set_title();
                 }
             }
+        }
+
+        if (sair_pedido) {
+            int sujos = 0;
+            for (const auto& d : ws.docs) {
+                sujos += d->unsaved ? 1 : 0;
+            }
+            if (sujos == 0) {
+                rodando = false;
+            } else if (!ImGui::IsPopupOpen("Sair sem salvar")) {
+                ImGui::OpenPopup("Sair sem salvar");
+            }
+        }
+        if (ImGui::BeginPopupModal("Sair sem salvar", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Tem alteração não salva:");
+            for (const auto& d : ws.docs) {
+                if (d->unsaved) {
+                    ImGui::BulletText("%s", d->label().c_str());
+                }
+            }
+            ImGui::Spacing();
+            if (ImGui::Button("Sair mesmo assim")) {
+                rodando = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                sair_pedido = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
 
         ImGui::Render();
