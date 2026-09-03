@@ -112,6 +112,10 @@ bool draw_operation_items(App& app) {
         {"combinar", CombineOp{}, "dois estágios do mesmo tipo"},
         {"casar histograma", MatchOp{}, "dois estágios de cor ou escalar"},
         {"ordem", RankOp{}, "um estágio de cor ou escalar"},
+        {"ruído", NoiseOp{}, "um estágio de cor ou escalar"},
+        {"média", MeanOp{}, "um estágio de cor ou escalar"},
+        {"redução adaptativa", AdaptiveOp{}, "um estágio de cor ou escalar"},
+        {"mediana adaptativa", AdaptiveMedianOp{}, "um estágio de cor ou escalar"},
         {"plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
         {"espectro", SpectrumOp{}, "um estágio de cor ou escalar"},
@@ -411,6 +415,65 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         dirty |= ImGui::SliderFloat("##larg", &op->width, 0.005f, 0.5f,
                                                     "largura %.3f", ImGuiSliderFlags_Logarithmic);
                     }
+                } else if (auto* op = std::get_if<NoiseOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "gaussiano\0rayleigh\0gama\0exponencial\0uniforme\0"
+                                     "sal e pimenta\0periódico\0")) {
+                        op->kind = static_cast<Noise>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-90.0f);
+                    switch (op->kind) {
+                        case Noise::Gaussian:
+                            dirty |= ImGui::DragFloat("média", &op->a, 0.002f, -1.0f, 1.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("desvio", &op->b, 0.002f, 0.0f, 1.0f, "%.3f");
+                            break;
+                        case Noise::SaltPepper:
+                            dirty |= ImGui::DragFloat("pimenta", &op->a, 0.002f, 0.0f, 0.5f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("sal", &op->b, 0.002f, 0.0f, 0.5f, "%.3f");
+                            break;
+                        case Noise::Periodic:
+                            dirty |= ImGui::DragFloat("amplitude", &op->a, 0.002f, 0.0f, 1.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("ciclos x", &op->b, 0.2f, 0.0f, 128.0f, "%.0f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("ciclos y", &op->c, 0.2f, 0.0f, 128.0f, "%.0f");
+                            break;
+                        default:
+                            dirty |= ImGui::DragFloat("a", &op->a, 0.01f, 0.0f, 40.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("b", &op->b, 0.01f, 0.0f, 40.0f, "%.3f");
+                            break;
+                    }
+                    if (op->kind != Noise::Periodic) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragInt("semente", &op->seed, 0.2f, 1, 9999);
+                    }
+                } else if (auto* op = std::get_if<MeanOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "aritmética\0geométrica\0harmônica\0contra-harmônica\0")) {
+                        op->kind = static_cast<Mean>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    if (op->kind == Mean::Contraharmonic) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##q", &op->q, -4.0f, 4.0f, "Q %+.2f");
+                        ImGui::TextDisabled("Q > 0 tira pimenta, Q < 0 tira sal");
+                    }
+                } else if (auto* op = std::get_if<AdaptiveOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragFloat("##var", &op->noise_variance, 0.0002f, 0.0f, 1.0f,
+                                              "variância %.5f");
+                } else if (auto* op = std::get_if<AdaptiveMedianOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->max_radius, 1.5f, 6.0f,
+                                                "raio máximo %.2f");
                 } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
                 } else if (auto* op = std::get_if<CombineOp>(&stage.params)) {

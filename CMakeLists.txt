@@ -67,6 +67,7 @@ add_executable(aresta
     src/morphology.cpp
     src/ops.cpp
     src/regions.cpp
+    src/restore.cpp
     src/texture.cpp
     src/ui.cpp
     src/value.cpp

@@ -7,6 +7,7 @@
 #include "convolve.h"
 #include "fft.h"
 #include "regions.h"
+#include "restore.h"
 #include "ops.h"
 #include "kernel.h"
 #include "morphology.h"
@@ -45,6 +46,23 @@ struct RankOp {
     float alpha = 0.4f;
 };
 struct MatchOp {};
+struct NoiseOp {
+    Noise kind = Noise::Gaussian;
+    float a = 0.0f;
+    float b = 0.05f;
+    float c = 8.0f;
+    int seed = 1;
+};
+struct MeanOp {
+    Mean kind = Mean::Arithmetic;
+    float radius = 1.5f;
+    float q = 1.5f;
+};
+struct AdaptiveOp {
+    float radius = 2.0f;
+    float noise_variance = 0.005f;
+};
+struct AdaptiveMedianOp { float max_radius = 3.5f; };
 struct SpectrumOp {
     Pad pad = Pad::Mirror;
     bool logarithmic = true;
@@ -85,7 +103,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
                               EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp,
                               RankOp, MatchOp, BitPlaneOp, ComposeOp, SpectrumOp,
-                              FreqFilterOp>;
+                              FreqFilterOp, NoiseOp, MeanOp, AdaptiveOp,
+                              AdaptiveMedianOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

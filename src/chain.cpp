@@ -48,6 +48,38 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return out;
     }
+    if (const auto* op = std::get_if<NoiseOp>(&params)) {
+        Value out = in[0]->clone();
+        if (out.kind == ValueKind::Scalar) {
+            add_noise(out.scalar.view(), op->kind, op->a, op->b, op->c,
+                      static_cast<unsigned>(op->seed));
+        } else {
+            add_noise(out.color.view(), op->kind, op->a, op->b, op->c,
+                      static_cast<unsigned>(op->seed));
+        }
+        return out;
+    }
+    if (const auto* op = std::get_if<MeanOp>(&params)) {
+        const Adjacency adjacency = adjacency_by_radius(op->radius);
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(mean_filter(in[0]->scalar.view(), adjacency, op->kind, op->q));
+        }
+        return make_color(mean_filter(in[0]->color.view(), adjacency, op->kind, op->q));
+    }
+    if (const auto* op = std::get_if<AdaptiveOp>(&params)) {
+        const Adjacency adjacency = adjacency_by_radius(op->radius);
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(
+                adaptive_denoise(in[0]->scalar.view(), adjacency, op->noise_variance));
+        }
+        return make_color(adaptive_denoise(in[0]->color.view(), adjacency, op->noise_variance));
+    }
+    if (const auto* op = std::get_if<AdaptiveMedianOp>(&params)) {
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(adaptive_median(in[0]->scalar.view(), op->max_radius));
+        }
+        return make_color(adaptive_median(in[0]->color.view(), op->max_radius));
+    }
     if (const auto* op = std::get_if<SpectrumOp>(&params)) {
         const Map<float> plano = in[0]->kind == ValueKind::Scalar
                                      ? Map<float>{}
@@ -240,6 +272,16 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, MatchOp>) {
                 return {"casar histograma", 2, {ValueKind::Color, ValueKind::Color},
                         ValueKind::Color, Poly::PairTone};
+            } else if constexpr (std::is_same_v<T, NoiseOp>) {
+                return {"ruído", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, MeanOp>) {
+                return {"média", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, AdaptiveOp>) {
+                return {"redução adaptativa", 1, {ValueKind::Color}, ValueKind::Color,
+                        Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, AdaptiveMedianOp>) {
+                return {"mediana adaptativa", 1, {ValueKind::Color}, ValueKind::Color,
+                        Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, SpectrumOp>) {
                 return {"espectro", 1, {ValueKind::Color}, ValueKind::Scalar,
                         Poly::ColorOrScalar};
@@ -506,6 +548,38 @@ std::string stage_summary(const OpParams& params) {
             std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", rank_name(op->kind),
                           op->radius);
         }
+    } else if (const auto* op = std::get_if<NoiseOp>(&params)) {
+        switch (op->kind) {
+            case Noise::Gaussian:
+                std::snprintf(buffer, sizeof(buffer), "gaussiano, média %.3f, desvio %.3f, semente %d",
+                              op->a, op->b, op->seed);
+                break;
+            case Noise::SaltPepper:
+                std::snprintf(buffer, sizeof(buffer), "sal e pimenta, %.1f%% e %.1f%%, semente %d",
+                              op->a * 100.0f, op->b * 100.0f, op->seed);
+                break;
+            case Noise::Periodic:
+                std::snprintf(buffer, sizeof(buffer), "periódico, amplitude %.3f, %.0f x %.0f ciclos",
+                              op->a, op->b, op->c);
+                break;
+            default:
+                std::snprintf(buffer, sizeof(buffer), "%s, a=%.3f b=%.3f, semente %d",
+                              noise_name(op->kind), op->a, op->b, op->seed);
+                break;
+        }
+    } else if (const auto* op = std::get_if<MeanOp>(&params)) {
+        if (op->kind == Mean::Contraharmonic) {
+            std::snprintf(buffer, sizeof(buffer), "contra-harmônica, raio %.2f, Q %+.2f",
+                          op->radius, op->q);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", mean_name(op->kind),
+                          op->radius);
+        }
+    } else if (const auto* op = std::get_if<AdaptiveOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f, variância do ruído %.5f", op->radius,
+                      op->noise_variance);
+    } else if (const auto* op = std::get_if<AdaptiveMedianOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio máximo %.2f", op->max_radius);
     } else if (const auto* op = std::get_if<SpectrumOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s%s", pad_name(op->pad),
                       op->logarithmic ? ", log" : "");
