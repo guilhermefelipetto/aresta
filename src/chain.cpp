@@ -233,6 +233,22 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return out;
     }
+    if (const auto* op = std::get_if<DistanceOp>(&params)) {
+        return make_scalar(distance_transform(in[0]->label.view(), op->inside));
+    }
+    if (const auto* op = std::get_if<ReconstructOp>(&params)) {
+        return make_label(reconstruct(in[0]->label.view(), in[1]->label.view(),
+                                      adjacency_by_radius(op->radius)));
+    }
+    if (const auto* op = std::get_if<FillHolesOp>(&params)) {
+        return make_label(fill_holes(in[0]->label.view(), adjacency_by_radius(op->radius)));
+    }
+    if (const auto* op = std::get_if<ThinOp>(&params)) {
+        return make_label(thinning(in[0]->label.view(), op->kind, op->iterations));
+    }
+    if (const auto* op = std::get_if<HitMissOp>(&params)) {
+        return make_label(hit_or_miss(in[0]->label.view(), op->pattern));
+    }
     if (const auto* op = std::get_if<ComponentsOp>(&params)) {
         const Adjacency adjacency = adjacency_by_radius(op->radius);
         std::vector<Region> todas;
@@ -305,6 +321,16 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, MorphologyOp>) {
                 return {"morfologia", 1, {ValueKind::Scalar}, ValueKind::Scalar,
                         Poly::ScalarOrLabel};
+            } else if constexpr (std::is_same_v<T, DistanceOp>) {
+                return {"distância", 1, {ValueKind::Label}, ValueKind::Scalar};
+            } else if constexpr (std::is_same_v<T, ReconstructOp>) {
+                return {"reconstruir", 2, {ValueKind::Label, ValueKind::Label}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, FillHolesOp>) {
+                return {"preencher buracos", 1, {ValueKind::Label}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, ThinOp>) {
+                return {"afinar", 1, {ValueKind::Label}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, HitMissOp>) {
+                return {"hit-or-miss", 1, {ValueKind::Label}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, ComponentsOp>) {
                 return {"componentes", 1, {ValueKind::Label}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, EqualizeOp>) {
@@ -637,6 +663,9 @@ const char* input_label(const OpParams& params, int k) {
     if (std::get_if<CombineOp>(&params)) {
         return k == 0 ? "a" : "b";
     }
+    if (std::get_if<ReconstructOp>(&params)) {
+        return k == 0 ? "marcador" : "máscara";
+    }
     return "entrada";
 }
 
@@ -669,6 +698,20 @@ std::string stage_summary(const OpParams& params) {
     } else if (const auto* op = std::get_if<MorphologyOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", morph_name(op->operation),
                       op->radius);
+    } else if (const auto* op = std::get_if<DistanceOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), op->inside ? "de dentro até o fundo"
+                                                         : "do fundo até o objeto");
+    } else if (const auto* op = std::get_if<ThinOp>(&params)) {
+        if (op->kind == Thin::Skeleton) {
+            std::snprintf(buffer, sizeof(buffer), "esqueleto");
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s, %d rodada%s", thin_name(op->kind),
+                          op->iterations, op->iterations == 1 ? "" : "s");
+        }
+    } else if (const auto* op = std::get_if<FillHolesOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f", op->radius);
+    } else if (const auto* op = std::get_if<ReconstructOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f", op->radius);
     } else if (const auto* op = std::get_if<ComponentsOp>(&params)) {
         std::string filtros;
         const auto& f = op->filter;

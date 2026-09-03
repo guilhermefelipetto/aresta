@@ -132,6 +132,11 @@ bool draw_operation_items(App& app) {
         {"threshold", ThresholdOp{}, "um estágio escalar, tipo luminância"},
         {"morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
         {"componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
+        {"distância", DistanceOp{}, "um estágio de rótulo"},
+        {"preencher buracos", FillHolesOp{}, "um estágio de rótulo"},
+        {"afinar", ThinOp{}, "um estágio de rótulo"},
+        {"hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
+        {"reconstruir", ReconstructOp{}, "dois estágios de rótulo"},
         {"overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
     };
 
@@ -444,6 +449,39 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
                                                     "%.2f", "%.2f");
+                } else if (auto* op = std::get_if<DistanceOp>(&stage.params)) {
+                    dirty |= ImGui::Checkbox("medir de dentro", &op->inside);
+                } else if (auto* op = std::get_if<FillHolesOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
+                } else if (auto* op = std::get_if<ReconstructOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
+                } else if (auto* op = std::get_if<ThinOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind, "afinar\0engrossar\0esqueleto\0")) {
+                        op->kind = static_cast<Thin>(kind);
+                        dirty = true;
+                    }
+                    if (op->kind != Thin::Skeleton) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderInt("##it", &op->iterations, 1, 20, "%d rodadas");
+                    }
+                } else if (auto* op = std::get_if<HitMissOp>(&stage.params)) {
+                    ImGui::TextDisabled("1 exige objeto, 0 exige fundo, . não olha");
+                    for (int j = 0; j < 3; ++j) {
+                        for (int i = 0; i < 3; ++i) {
+                            if (i > 0) {
+                                ImGui::SameLine();
+                            }
+                            ImGui::PushID(j * 3 + i);
+                            int& cell = op->pattern[j * 3 + i];
+                            const char* rotulo = cell < 0 ? "." : (cell == 0 ? "0" : "1");
+                            if (ImGui::Button(rotulo, ImVec2(28.0f, 0.0f))) {
+                                cell = cell < 0 ? 0 : (cell == 0 ? 1 : -1);
+                                dirty = true;
+                            }
+                            ImGui::PopID();
+                        }
+                    }
                 } else if (auto* op = std::get_if<ComponentsOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
                     ImGui::TextDisabled("filtrar em Ferramentas > Componentes");

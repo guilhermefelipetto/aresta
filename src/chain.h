@@ -32,6 +32,16 @@ struct MorphologyOp {
     Morph operation = Morph::Erode;
     float radius = 1.0f;
 };
+struct DistanceOp { bool inside = true; };
+struct ReconstructOp { float radius = 1.5f; };
+struct FillHolesOp { float radius = 1.5f; };
+struct ThinOp {
+    Thin kind = Thin::Skeleton;
+    int iterations = 1;
+};
+struct HitMissOp {
+    int pattern[9] = {-1, -1, -1, -1, 1, -1, -1, -1, -1};
+};
 struct ComponentsOp {
     float radius = 1.5f;
     ComponentFilter filter;
@@ -129,7 +139,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               RankOp, MatchOp, BitPlaneOp, ComposeOp, SpectrumOp,
                               FreqFilterOp, NoiseOp, MeanOp, AdaptiveOp,
                               AdaptiveMedianOp, DegradeOp, RestoreOp, ColorGradientOp,
-                              ColorDistanceOp, PseudoColorOp>;
+                              ColorDistanceOp, PseudoColorOp, DistanceOp,
+                              ReconstructOp, FillHolesOp, ThinOp, HitMissOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

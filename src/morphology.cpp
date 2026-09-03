@@ -171,3 +171,278 @@ Map<int32_t> connected_components(MapView<int32_t> src, const Adjacency& adjacen
     }
     return out;
 }
+
+namespace {
+
+constexpr float infinito = 1e20f;
+
+// Envoltória inferior de parábolas: o miolo do algoritmo separável.
+void distance_1d(const float* f, float* d, int n, int* v, float* z) {
+    int k = 0;
+    v[0] = 0;
+    z[0] = -infinito;
+    z[1] = infinito;
+
+    for (int q = 1; q < n; ++q) {
+        float s = ((f[q] + static_cast<float>(q) * q) -
+                   (f[v[k]] + static_cast<float>(v[k]) * v[k])) /
+                  (2.0f * static_cast<float>(q - v[k]));
+        while (s <= z[k]) {
+            --k;
+            s = ((f[q] + static_cast<float>(q) * q) -
+                 (f[v[k]] + static_cast<float>(v[k]) * v[k])) /
+                (2.0f * static_cast<float>(q - v[k]));
+        }
+        ++k;
+        v[k] = q;
+        z[k] = s;
+        z[k + 1] = infinito;
+    }
+
+    k = 0;
+    for (int q = 0; q < n; ++q) {
+        while (z[k + 1] < static_cast<float>(q)) {
+            ++k;
+        }
+        const float dq = static_cast<float>(q - v[k]);
+        d[q] = dq * dq + f[v[k]];
+    }
+}
+
+}  // namespace
+
+Map<float> distance_transform(MapView<int32_t> labels, bool inside) {
+    Map<float> out(labels.width, labels.height);
+    const MapView<float> dst = out.view();
+
+    for (int y = 0; y < labels.height; ++y) {
+        const int32_t* row = labels.row(y);
+        float* q = dst.row(y);
+        for (int x = 0; x < labels.width; ++x) {
+            const bool semente = inside ? (row[x] == 0) : (row[x] != 0);
+            q[x] = semente ? 0.0f : infinito;
+        }
+    }
+
+    const int maior = std::max(labels.width, labels.height);
+    std::vector<float> f(static_cast<std::size_t>(maior));
+    std::vector<float> d(static_cast<std::size_t>(maior));
+    std::vector<int> v(static_cast<std::size_t>(maior));
+    std::vector<float> z(static_cast<std::size_t>(maior) + 1);
+
+    for (int x = 0; x < labels.width; ++x) {
+        for (int y = 0; y < labels.height; ++y) {
+            f[static_cast<std::size_t>(y)] = dst.at(x, y);
+        }
+        distance_1d(f.data(), d.data(), labels.height, v.data(), z.data());
+        for (int y = 0; y < labels.height; ++y) {
+            dst.at(x, y) = d[static_cast<std::size_t>(y)];
+        }
+    }
+    for (int y = 0; y < labels.height; ++y) {
+        float* row = dst.row(y);
+        for (int x = 0; x < labels.width; ++x) {
+            f[static_cast<std::size_t>(x)] = row[x];
+        }
+        distance_1d(f.data(), d.data(), labels.width, v.data(), z.data());
+        for (int x = 0; x < labels.width; ++x) {
+            row[x] = std::sqrt(d[static_cast<std::size_t>(x)]);
+        }
+    }
+    return out;
+}
+
+Map<int32_t> reconstruct(MapView<int32_t> marker, MapView<int32_t> mask,
+                         const Adjacency& adjacency) {
+    Map<int32_t> out(mask.width, mask.height);
+    const MapView<int32_t> dst = out.view();
+    for (int y = 0; y < mask.height; ++y) {
+        int32_t* row = dst.row(y);
+        for (int x = 0; x < mask.width; ++x) {
+            const int mx = std::min(x, marker.width - 1);
+            const int my = std::min(y, marker.height - 1);
+            row[x] = std::min(marker.at(mx, my), mask.at(x, y));
+        }
+    }
+
+    // Duas varreduras cobrem quase tudo; a fila pega o que precisa voltar,
+    // como espiral e cabo de U.
+    std::vector<int> pending;
+    for (int passo = 0; passo < 2; ++passo) {
+        const bool frente = passo == 0;
+        for (int i = 0; i < mask.height; ++i) {
+            const int y = frente ? i : mask.height - 1 - i;
+            for (int j = 0; j < mask.width; ++j) {
+                const int x = frente ? j : mask.width - 1 - j;
+                int32_t melhor = dst.at(x, y);
+                for (const Adjacency::Offset& offset : adjacency.offsets) {
+                    const bool causal = frente ? (offset.dy < 0 || (offset.dy == 0 && offset.dx < 0))
+                                               : (offset.dy > 0 || (offset.dy == 0 && offset.dx > 0));
+                    if (!causal) {
+                        continue;
+                    }
+                    const int sx = x + offset.dx;
+                    const int sy = y + offset.dy;
+                    if (sx < 0 || sy < 0 || sx >= mask.width || sy >= mask.height) {
+                        continue;
+                    }
+                    melhor = std::max(melhor, dst.at(sx, sy));
+                }
+                dst.at(x, y) = std::min(melhor, mask.at(x, y));
+            }
+        }
+    }
+
+    for (int y = 0; y < mask.height; ++y) {
+        for (int x = 0; x < mask.width; ++x) {
+            pending.push_back(y * mask.width + x);
+        }
+    }
+    while (!pending.empty()) {
+        const int at = pending.back();
+        pending.pop_back();
+        const int x = at % mask.width;
+        const int y = at / mask.width;
+        for (const Adjacency::Offset& offset : adjacency.offsets) {
+            const int sx = x + offset.dx;
+            const int sy = y + offset.dy;
+            if (sx < 0 || sy < 0 || sx >= mask.width || sy >= mask.height) {
+                continue;
+            }
+            const int32_t alvo = std::min(dst.at(x, y), mask.at(sx, sy));
+            if (dst.at(sx, sy) < alvo) {
+                dst.at(sx, sy) = alvo;
+                pending.push_back(sy * mask.width + sx);
+            }
+        }
+    }
+    return out;
+}
+
+Map<int32_t> fill_holes(MapView<int32_t> labels, const Adjacency& adjacency) {
+    // Marcador: só a borda do complemento. Ele cresce pelo fundo conectado à
+    // margem, e o fundo que não alcança é buraco.
+    Map<int32_t> complemento(labels.width, labels.height);
+    Map<int32_t> marcador(labels.width, labels.height);
+    marcador.fill(0);
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            const int32_t livre = labels.at(x, y) == 0 ? 1 : 0;
+            complemento.view().at(x, y) = livre;
+            if (livre && (x == 0 || y == 0 || x == labels.width - 1 || y == labels.height - 1)) {
+                marcador.view().at(x, y) = 1;
+            }
+        }
+    }
+
+    const Map<int32_t> fora = reconstruct(marcador.view(), complemento.view(), adjacency);
+    Map<int32_t> out(labels.width, labels.height);
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            out.view().at(x, y) = fora.view().at(x, y) ? 0 : 1;
+        }
+    }
+    return out;
+}
+
+const char* thin_name(Thin kind) {
+    switch (kind) {
+        case Thin::Thin: return "afinar";
+        case Thin::Thicken: return "engrossar";
+        case Thin::Skeleton: return "esqueleto";
+    }
+    return "?";
+}
+
+namespace {
+
+// Os dois gabaritos do afinamento e as três rotações de cada, na ordem em que
+// o livro aplica.
+constexpr int templates[8][9] = {
+    {0, 0, 0, -1, 1, -1, 1, 1, 1},  {-1, 0, 0, 1, 1, 0, -1, 1, -1},
+    {1, -1, 0, 1, 1, 0, 1, -1, 0},  {-1, 1, -1, 1, 1, 0, -1, 0, 0},
+    {1, 1, 1, -1, 1, -1, 0, 0, 0},  {-1, 1, -1, 0, 1, 1, 0, 0, -1},
+    {0, -1, 1, 0, 1, 1, 0, -1, 1},  {0, 0, -1, 0, 1, 1, -1, 1, -1},
+};
+
+bool matches(MapView<int32_t> labels, int x, int y, const int pattern[9]) {
+    for (int j = -1; j <= 1; ++j) {
+        for (int i = -1; i <= 1; ++i) {
+            const int want = pattern[(j + 1) * 3 + (i + 1)];
+            if (want < 0) {
+                continue;
+            }
+            const int sx = x + i;
+            const int sy = y + j;
+            const int32_t valor = (sx < 0 || sy < 0 || sx >= labels.width || sy >= labels.height)
+                                      ? 0
+                                      : (labels.at(sx, sy) != 0 ? 1 : 0);
+            if (valor != want) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+}  // namespace
+
+Map<int32_t> hit_or_miss(MapView<int32_t> labels, const int pattern[9]) {
+    Map<int32_t> out(labels.width, labels.height);
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            out.view().at(x, y) = matches(labels, x, y, pattern) ? 1 : 0;
+        }
+    }
+    return out;
+}
+
+Map<int32_t> thinning(MapView<int32_t> labels, Thin kind, int iterations) {
+    Map<int32_t> atual(labels.width, labels.height);
+    const bool engrossar = kind == Thin::Thicken;
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            const int32_t v = labels.at(x, y) != 0 ? 1 : 0;
+            atual.view().at(x, y) = engrossar ? 1 - v : v;
+        }
+    }
+
+    // Cada gabarito casa na imagem inteira antes de qualquer remoção. Apagar
+    // durante a varredura faz o gabarito seguinte ver a imagem já comida, e o
+    // resultado sai enviesado pro lado em que a varredura anda.
+    const int limite = kind == Thin::Skeleton ? 512 : std::max(iterations, 1);
+    std::vector<unsigned char> casou(atual.count());
+    for (int rodada = 0; rodada < limite; ++rodada) {
+        bool mudou = false;
+        for (const auto& gabarito : templates) {
+            std::fill(casou.begin(), casou.end(), 0);
+            for (int y = 0; y < atual.height; ++y) {
+                for (int x = 0; x < atual.width; ++x) {
+                    if (atual.view().at(x, y) && matches(atual.view(), x, y, gabarito)) {
+                        casou[static_cast<std::size_t>(y) * atual.width + x] = 1;
+                    }
+                }
+            }
+            for (int y = 0; y < atual.height; ++y) {
+                for (int x = 0; x < atual.width; ++x) {
+                    if (casou[static_cast<std::size_t>(y) * atual.width + x]) {
+                        atual.view().at(x, y) = 0;
+                        mudou = true;
+                    }
+                }
+            }
+        }
+        if (!mudou) {
+            break;
+        }
+    }
+
+    if (engrossar) {
+        for (int y = 0; y < atual.height; ++y) {
+            for (int x = 0; x < atual.width; ++x) {
+                atual.view().at(x, y) = 1 - atual.view().at(x, y);
+            }
+        }
+    }
+    return atual;
+}
