@@ -210,7 +210,7 @@ struct StretchOp {
 };
 struct ConvolveOp {
     Kernel kernel;
-    Border border = Border::Clamp;
+    Border border = Border::Zero;
     bool flip = false;
     bool normalize = false;
     ConvPath path = ConvPath::Auto;

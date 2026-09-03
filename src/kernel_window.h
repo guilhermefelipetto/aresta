@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "chain.h"
 #include "convolve.h"
 #include "kernel.h"
 
@@ -11,9 +12,15 @@ struct KernelWindow {
     bool open = false;
 
     Kernel kernel;
-    Border border = Border::Clamp;
+    Border border = Border::Zero;
     bool flip = false;
     bool normalize_on_apply = false;
+    ConvPath path = ConvPath::Auto;
+
+    // O que a janela e o estágio tinham na última vez que bateram. Sem isso
+    // não dá pra saber quem mexeu: se foi a janela, empurra pro estágio; se
+    // foi a cadeia, puxa de volta.
+    ConvolveOp synced;
 
     // Id do estágio que a janela está dirigindo, ou -1 pra ela estar só
     // montando um kernel solto.

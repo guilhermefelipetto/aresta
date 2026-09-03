@@ -124,13 +124,38 @@ void draw_response(const Kernel& kernel, float side) {
     draw->AddRect(origin, ImVec2(origin.x + side, origin.y + side), IM_COL32(60, 60, 68, 255));
 }
 
+void apoio(const char* texto) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+    ImGui::TextWrapped("%s", texto);
+    ImGui::PopStyleColor();
+}
+
+const char* border_hint(Border border) {
+    switch (border) {
+        case Border::Zero: return "fora da imagem vale zero, então a borda escurece";
+        case Border::Clamp: return "repete o pixel da beirada";
+        case Border::Mirror: return "reflete a imagem na beirada";
+        case Border::Wrap: return "dá a volta pro outro lado";
+    }
+    return "";
+}
+
 ConvolveOp current_op(const KernelWindow& window) {
     ConvolveOp op;
     op.kernel = window.kernel;
     op.border = window.border;
     op.flip = window.flip;
     op.normalize = window.normalize_on_apply;
+    op.path = window.path;
     return op;
+}
+
+void load_into(KernelWindow& window, const ConvolveOp& op) {
+    window.kernel = op.kernel;
+    window.border = op.border;
+    window.flip = op.flip;
+    window.normalize_on_apply = op.normalize;
+    window.path = op.path;
 }
 
 // Empurra o que está na janela pro estágio ligado. Enquanto houver ligação,
@@ -212,7 +237,8 @@ bool draw_grid(KernelWindow& window) {
 // novo que eu esquecer de ligar continua funcionando.
 bool differs(const ConvolveOp& a, const ConvolveOp& b) {
     if (a.border != b.border || a.flip != b.flip || a.normalize != b.normalize ||
-        a.kernel.width != b.kernel.width || a.kernel.height != b.kernel.height) {
+        a.path != b.path || a.kernel.width != b.kernel.width ||
+        a.kernel.height != b.kernel.height) {
         return true;
     }
     for (std::size_t i = 0; i < a.kernel.values.size(); ++i) {
@@ -235,10 +261,8 @@ void attach_kernel_window(KernelWindow& window, App& app, int stage_id) {
         return;
     }
 
-    window.kernel = op->kernel;
-    window.border = op->border;
-    window.flip = op->flip;
-    window.normalize_on_apply = op->normalize;
+    load_into(window, *op);
+    window.synced = *op;
     window.editing = stage_id;
     window.open = true;
     window.message.clear();
@@ -435,10 +459,22 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
 
         if (ImGui::CollapsingHeader("Aplicar", ImGuiTreeNodeFlags_DefaultOpen)) {
             int border = static_cast<int>(window.border);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::Combo("##borda", &border, "zero\0estender\0espelhar\0circular\0")) {
+            ImGui::SetNextItemWidth(-160.0f);
+            if (ImGui::Combo("borda", &border, "zero\0estender\0espelhar\0circular\0")) {
                 window.border = static_cast<Border>(border);
                 changed = true;
+            }
+            apoio(border_hint(window.border));
+
+            int caminho = static_cast<int>(window.path);
+            ImGui::SetNextItemWidth(-160.0f);
+            if (ImGui::Combo("caminho", &caminho, "automático\0espacial\0frequência\0")) {
+                window.path = static_cast<ConvPath>(caminho);
+                changed = true;
+            }
+            if (window.path == ConvPath::Auto) {
+                apoio("kernel a partir de 25x25 vai pela FFT, abaixo disso o "
+                      "caminho direto é mais rápido");
             }
             changed |= ImGui::Checkbox("espelhar o kernel (convolução estrita)", &window.flip);
             changed |= ImGui::Checkbox("normalizar antes de aplicar", &window.normalize_on_apply);
@@ -474,8 +510,15 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
         const int bound = app.chain.index_of(window.editing);
         const auto* stored =
             bound >= 0 ? std::get_if<ConvolveOp>(&app.chain.stages[bound].params) : nullptr;
-        if (stored && (changed || differs(current_op(window), *stored))) {
-            write_back(window, app);
+        if (stored) {
+            const ConvolveOp atual = current_op(window);
+            if (changed || differs(atual, window.synced)) {
+                write_back(window, app);
+                window.synced = atual;
+            } else if (differs(*stored, window.synced)) {
+                load_into(window, *stored);
+                window.synced = *stored;
+            }
         }
     }
 
