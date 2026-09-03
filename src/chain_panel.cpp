@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <imgui.h>
@@ -171,7 +172,7 @@ bool draw_operation_items(App& app) {
 
         {"Vizinhança", "convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
         {"Vizinhança", "média", MeanOp{}, "um estágio de cor ou escalar"},
-        {"Vizinhança", "ordem", RankOp{}, "um estágio de cor ou escalar"},
+        {"Vizinhança", "filtro de ordem", RankOp{}, "um estágio de cor ou escalar"},
         {"Vizinhança", "redução adaptativa", AdaptiveOp{}, "um estágio de cor ou escalar"},
         {"Vizinhança", "mediana adaptativa", AdaptiveMedianOp{}, "um estágio de cor ou escalar"},
 
@@ -651,6 +652,193 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     }
                 } else if (auto* op = std::get_if<MultiOtsuOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->classes, 2, 4, "%d classes");
+                } else if (auto* op = std::get_if<RankOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "mediana\0mínimo\0máximo\0ponto médio\0"
+                                     "média alfa-cortada\0")) {
+                        op->kind = static_cast<Rank>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    if (op->kind == Rank::AlphaTrimmed) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##alfa", &op->alpha, 0.0f, 0.9f,
+                                                    "corta %.0f%%");
+                    }
+                } else if (auto* op = std::get_if<SpectrumOp>(&stage.params)) {
+                    int pad = static_cast<int>(op->pad);
+                    if (ImGui::Combo("##p", &pad, "espelhar\0zero\0")) {
+                        op->pad = static_cast<Pad>(pad);
+                        dirty = true;
+                    }
+                    dirty |= ImGui::Checkbox("escala log", &op->logarithmic);
+                } else if (auto* op = std::get_if<FreqFilterOp>(&stage.params)) {
+                    int shape = static_cast<int>(op->shape);
+                    if (ImGui::Combo("##p", &shape, "ideal\0Butterworth\0gaussiano\0")) {
+                        op->shape = static_cast<FreqShape>(shape);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##k", &kind,
+                                     "passa-baixa\0passa-alta\0passa-faixa\0rejeita-faixa\0")) {
+                        op->kind = static_cast<FreqKind>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##corte", &op->cutoff, 0.005f, 1.0f,
+                                                "corte %.3f", ImGuiSliderFlags_Logarithmic);
+                    if (op->shape == FreqShape::Butterworth) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderInt("##ordem", &op->order, 1, 8, "ordem %d");
+                    }
+                    if (op->kind == FreqKind::BandPass || op->kind == FreqKind::BandReject) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##larg", &op->width, 0.005f, 0.5f,
+                                                    "largura %.3f", ImGuiSliderFlags_Logarithmic);
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    int pad = static_cast<int>(op->pad);
+                    if (ImGui::Combo("##pad", &pad, "borda: espelhar\0borda: zero\0")) {
+                        op->pad = static_cast<Pad>(pad);
+                        dirty = true;
+                    }
+                } else if (auto* op = std::get_if<NoiseOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "gaussiano\0rayleigh\0gama\0exponencial\0uniforme\0"
+                                     "sal e pimenta\0periódico\0")) {
+                        op->kind = static_cast<Noise>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-90.0f);
+                    switch (op->kind) {
+                        case Noise::Gaussian:
+                            dirty |= ImGui::DragFloat("média", &op->a, 0.002f, -1.0f, 1.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("desvio", &op->b, 0.002f, 0.0f, 1.0f, "%.3f");
+                            break;
+                        case Noise::SaltPepper:
+                            dirty |= ImGui::DragFloat("pimenta", &op->a, 0.002f, 0.0f, 0.5f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("sal", &op->b, 0.002f, 0.0f, 0.5f, "%.3f");
+                            break;
+                        case Noise::Periodic:
+                            dirty |= ImGui::DragFloat("amplitude", &op->a, 0.002f, 0.0f, 1.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("ciclos x", &op->b, 0.2f, 0.0f, 128.0f, "%.0f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("ciclos y", &op->c, 0.2f, 0.0f, 128.0f, "%.0f");
+                            break;
+                        default:
+                            dirty |= ImGui::DragFloat("a", &op->a, 0.01f, 0.0f, 40.0f, "%.3f");
+                            ImGui::SetNextItemWidth(-90.0f);
+                            dirty |= ImGui::DragFloat("b", &op->b, 0.01f, 0.0f, 40.0f, "%.3f");
+                            break;
+                    }
+                    if (op->kind != Noise::Periodic) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragInt("semente", &op->seed, 0.2f, 1, 9999);
+                    }
+                } else if (auto* op = std::get_if<MeanOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind,
+                                     "aritmética\0geométrica\0harmônica\0contra-harmônica\0")) {
+                        op->kind = static_cast<Mean>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    if (op->kind == Mean::Contraharmonic) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##q", &op->q, -4.0f, 4.0f, "Q %+.2f");
+                        apoio("Q > 0 tira pimenta, Q < 0 tira sal");
+                    }
+                } else if (auto* op = std::get_if<AdaptiveOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 5.0f, "raio %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragFloat("##var", &op->noise_variance, 0.0002f, 0.0f, 1.0f,
+                                              "variância %.5f");
+                } else if (auto* op = std::get_if<AdaptiveMedianOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->max_radius, 1.5f, 6.0f,
+                                                "raio máximo %.2f");
+                } else if (auto* op = std::get_if<DegradeOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind, "movimento\0turbulência\0")) {
+                        op->kind = static_cast<Degradation>(kind);
+                        dirty = true;
+                    }
+                    if (op->kind == Degradation::Motion) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em x", &op->dx, 0.2f, -100.0f, 100.0f, "%.1f");
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em y", &op->dy, 0.2f, -100.0f, 100.0f, "%.1f");
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("k", &op->k, 0.05f, 0.0f, 60.0f, "%.2f");
+                    }
+                } else if (auto* op = std::get_if<RestoreOp>(&stage.params)) {
+                    int method = static_cast<int>(op->method);
+                    if (ImGui::Combo("##p", &method,
+                                     "inverso\0Wiener\0mínimos quadrados\0")) {
+                        op->method = static_cast<Restoration>(method);
+                        dirty = true;
+                    }
+                    if (op->method == Restoration::Inverse) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::SliderFloat("corte", &op->limit, 0.01f, 1.5f, "%.3f",
+                                                    ImGuiSliderFlags_Logarithmic);
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat(
+                            op->method == Restoration::Wiener ? "K" : "gama", &op->parameter,
+                            0.0002f, 0.0f, 2.0f, "%.5f");
+                    }
+                    ImGui::Spacing();
+                    apoio("degradação suposta");
+                    int kind = static_cast<int>(op->kind);
+                    ImGui::SetNextItemWidth(-90.0f);
+                    if (ImGui::Combo("modelo", &kind, "movimento\0turbulência\0")) {
+                        op->kind = static_cast<Degradation>(kind);
+                        dirty = true;
+                    }
+                    if (op->kind == Degradation::Motion) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em x", &op->dx, 0.2f, -100.0f, 100.0f, "%.1f");
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em y", &op->dy, 0.2f, -100.0f, 100.0f, "%.1f");
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("k", &op->k, 0.05f, 0.0f, 60.0f, "%.2f");
+                    }
+                } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
+                } else if (auto* op = std::get_if<CombineOp>(&stage.params)) {
+                    int operation = static_cast<int>(op->operation);
+                    if (ImGui::Combo("##p", &operation,
+                                     "somar\0subtrair\0diferença absoluta\0multiplicar\0"
+                                     "dividir\0mínimo\0máximo\0média\0")) {
+                        op->operation = static_cast<Combine>(operation);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragFloat("##escala", &op->scale, 0.01f, -8.0f, 8.0f,
+                                              "escala %.3f");
+                } else if (auto* op = std::get_if<CurveOp>(&stage.params)) {
+                    dirty |= ImGui::InputText("##p", op->expression, sizeof(op->expression));
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::DragFloat("a", &op->a, 0.01f, -8.0f, 8.0f, "%.3f");
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::DragFloat("b", &op->b, 0.01f, -8.0f, 8.0f, "%.3f");
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::DragFloat("c", &op->c, 0.01f, -8.0f, 8.0f, "%.3f");
+                    dirty |= ImGui::Checkbox("sobre sRGB", &op->on_srgb);
+                } else if (auto* op = std::get_if<ClaheOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->tiles, 2, 32, "%d pedaços por lado");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##clip", &op->clip, 1.0f, 8.0f, "recorte %.2f");
                 } else if (auto* op = std::get_if<ResizeOp>(&stage.params)) {
                     int modo = op->by_scale ? 0 : 1;
                     if (ImGui::Combo("##p", &modo, "por fator\0por tamanho\0")) {
@@ -748,8 +936,13 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     }
                     ImGui::SetNextItemWidth(-1.0f);
                     dirty |= ImGui::SliderFloat("##raio", &op->radius, 1.0f, 6.0f, "raio %.2f");
-            }
-
+                } else if (!std::visit([](const auto& p) {
+                               return std::is_empty_v<std::decay_t<decltype(p)>>;
+                           }, stage.params)) {
+                    // Op com campo mas sem bloco acima passou despercebida uma
+                    // vez inteira; agora ela grita em vez de aparecer vazia.
+                    aviso("essa operação está sem controles");
+                }
             }
 
             if (aberto && stage.id != 0) {

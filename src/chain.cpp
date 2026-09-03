@@ -31,7 +31,6 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
                         out.label.view());
                 break;
         }
-        *note = combine_name(op->operation);
         return out;
     }
     if (const auto* op = std::get_if<RankOp>(&params)) {
@@ -194,7 +193,7 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
             level = otsu_threshold(in[0]->scalar.view());
             const float span = (hi > lo) ? (hi - lo) : 1.0f;
             std::snprintf(aviso, sizeof(aviso),
-                          "Otsu escolheu %.4f, que é %.4f da faixa, ou nível %.0f de %d", level,
+                          "escolheu %.4f, que é %.4f da faixa, ou nível %.0f de %d", level,
                           (level - lo) / span, (level - lo) / span * ((1 << op->bits) - 1),
                           (1 << op->bits) - 1);
         } else {
