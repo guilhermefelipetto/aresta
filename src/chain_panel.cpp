@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -92,52 +93,96 @@ void draw_links(const std::vector<Link>& links, const std::vector<Row>& rows, fl
 
 }  // namespace
 
-bool draw_operation_items(App& app) {
-    struct Entry {
-        const char* label;
-        OpParams params;
-        const char* needs;
-    };
+namespace {
 
-    const Entry entries[] = {
-        {"exposição", ExposureOp{}, "um estágio de cor"},
-        {"contraste", ContrastOp{}, "um estágio de cor"},
-        {"gama", GammaOp{}, "um estágio de cor"},
-        {"inverter", InvertOp{}, "um estágio de cor"},
-        {nullptr, SourceOp{}, nullptr},
-        {"convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
-        {"equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
-        {"clahe", ClaheOp{}, "um estágio de cor ou escalar"},
-        {"curva", CurveOp{}, "um estágio de cor ou escalar"},
-        {"combinar", CombineOp{}, "dois estágios do mesmo tipo"},
-        {"casar histograma", MatchOp{}, "dois estágios de cor ou escalar"},
-        {"ordem", RankOp{}, "um estágio de cor ou escalar"},
-        {"ruído", NoiseOp{}, "um estágio de cor ou escalar"},
-        {"média", MeanOp{}, "um estágio de cor ou escalar"},
-        {"redução adaptativa", AdaptiveOp{}, "um estágio de cor ou escalar"},
-        {"mediana adaptativa", AdaptiveMedianOp{}, "um estágio de cor ou escalar"},
-        {"degradar", DegradeOp{}, "um estágio de cor ou escalar"},
-        {"restaurar", RestoreOp{}, "um estágio de cor ou escalar"},
-        {"plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
-        {nullptr, SourceOp{}, nullptr},
-        {"espectro", SpectrumOp{}, "um estágio de cor ou escalar"},
-        {"filtro de frequência", FreqFilterOp{}, "um estágio de cor ou escalar"},
-        {"compor", ComposeOp{}, "três estágios escalares"},
-        {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
-        {nullptr, SourceOp{}, nullptr},
-        {"canal", ChannelOp{}, "um estágio de cor"},
-        {"gradiente de cor", ColorGradientOp{}, "um estágio de cor"},
-        {"distância de cor", ColorDistanceOp{}, "um estágio de cor"},
-        {"pseudo-cor", PseudoColorOp{}, "um estágio escalar"},
-        {"threshold", ThresholdOp{}, "um estágio escalar, tipo luminância"},
-        {"morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
-        {"componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
-        {"distância", DistanceOp{}, "um estágio de rótulo"},
-        {"preencher buracos", FillHolesOp{}, "um estágio de rótulo"},
-        {"afinar", ThinOp{}, "um estágio de rótulo"},
-        {"hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
-        {"reconstruir", ReconstructOp{}, "dois estágios de rótulo"},
-        {"overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
+struct Entry {
+    const char* group;  // nullptr fica solto na raiz
+    const char* label;
+    OpParams params;
+    const char* needs;
+};
+
+// Uma entrada. Devolve true se acrescentou.
+bool draw_entry(App& app, const Entry& entry, int viewed_id) {
+    const bool ready = app.chain.can_add(entry.params);
+    OpParams bridge = SourceOp{};
+    const bool bridged = !ready && bridge_for(app.chain, entry.params, &bridge);
+    const char* via = bridged ? op_info(bridge).name : nullptr;
+    char shortcut[48] = {};
+    if (via) {
+        std::snprintf(shortcut, sizeof(shortcut), "via %s", via);
+    }
+
+    bool added = false;
+    if (ImGui::MenuItem(entry.label, via ? shortcut : nullptr, false, ready || bridged)) {
+        // Entra logo depois do que está selecionado, não no fim: quem
+        // acrescenta operação quer continuar dali.
+        int depois = app.viewed + 1;
+        int input = viewed_id;
+        if (bridged) {
+            input = app.chain.add(bridge, viewed_id, depois);
+            ++depois;
+        }
+        app.viewed = app.chain.index_of(app.chain.add(entry.params, input, depois));
+        added = true;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        if (bridged) {
+            ImGui::SetTooltip("acrescenta um estágio de %s antes, e deixa ele na cadeia\n"
+                              "pra você trocar o canal ou o limiar depois",
+                              via);
+        } else if (!ready) {
+            ImGui::SetTooltip("precisa de %s antes", entry.needs);
+        }
+    }
+    return added;
+}
+
+}  // namespace
+
+bool draw_operation_items(App& app) {
+    static const Entry entries[] = {
+        {"Tom", "exposição", ExposureOp{}, "um estágio de cor"},
+        {"Tom", "contraste", ContrastOp{}, "um estágio de cor"},
+        {"Tom", "gama", GammaOp{}, "um estágio de cor"},
+        {"Tom", "inverter", InvertOp{}, "um estágio qualquer"},
+        {"Tom", "curva", CurveOp{}, "um estágio de cor ou escalar"},
+        {"Tom", "plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
+
+        {"Histograma", "equalizar", EqualizeOp{}, "um estágio de cor ou escalar"},
+        {"Histograma", "clahe", ClaheOp{}, "um estágio de cor ou escalar"},
+        {"Histograma", "alongar", StretchOp{}, "um estágio de cor ou escalar"},
+        {"Histograma", "casar histograma", MatchOp{}, "dois estágios de cor ou escalar"},
+
+        {"Vizinhança", "convolução", ConvolveOp{}, "um estágio de cor ou escalar"},
+        {"Vizinhança", "média", MeanOp{}, "um estágio de cor ou escalar"},
+        {"Vizinhança", "ordem", RankOp{}, "um estágio de cor ou escalar"},
+        {"Vizinhança", "redução adaptativa", AdaptiveOp{}, "um estágio de cor ou escalar"},
+        {"Vizinhança", "mediana adaptativa", AdaptiveMedianOp{}, "um estágio de cor ou escalar"},
+
+        {"Frequência", "espectro", SpectrumOp{}, "um estágio de cor ou escalar"},
+        {"Frequência", "filtro de frequência", FreqFilterOp{}, "um estágio de cor ou escalar"},
+        {"Frequência", "degradar", DegradeOp{}, "um estágio de cor ou escalar"},
+        {"Frequência", "restaurar", RestoreOp{}, "um estágio de cor ou escalar"},
+
+        {"Cor", "canal", ChannelOp{}, "um estágio de cor"},
+        {"Cor", "compor", ComposeOp{}, "três estágios escalares"},
+        {"Cor", "gradiente de cor", ColorGradientOp{}, "um estágio de cor"},
+        {"Cor", "distância de cor", ColorDistanceOp{}, "um estágio de cor"},
+        {"Cor", "pseudo-cor", PseudoColorOp{}, "um estágio escalar"},
+
+        {"Binário", "threshold", ThresholdOp{}, "um estágio escalar, tipo canal"},
+        {"Binário", "morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
+        {"Binário", "hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
+        {"Binário", "afinar", ThinOp{}, "um estágio de rótulo"},
+        {"Binário", "preencher buracos", FillHolesOp{}, "um estágio de rótulo"},
+        {"Binário", "reconstruir", ReconstructOp{}, "dois estágios de rótulo"},
+        {"Binário", "componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
+        {"Binário", "distância", DistanceOp{}, "um estágio de rótulo"},
+
+        {nullptr, "combinar", CombineOp{}, "dois estágios do mesmo tipo"},
+        {nullptr, "overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
+        {nullptr, "ruído", NoiseOp{}, "um estágio de cor ou escalar"},
     };
 
     const int viewed_id = (app.viewed >= 0 &&
@@ -146,47 +191,44 @@ bool draw_operation_items(App& app) {
                               : -1;
 
     bool added = false;
+    const char* grupo = nullptr;
+    bool aberto = false;
+    bool primeiro_solto = true;
+
+    const auto fechar = [&] {
+        if (aberto) {
+            ImGui::EndMenu();
+            aberto = false;
+        }
+        grupo = nullptr;
+    };
+
     for (const Entry& entry : entries) {
-        if (!entry.label) {
-            ImGui::Separator();
+        if (entry.group) {
+            // Guardar o grupo separado de "o submenu abriu" importa: submenu
+            // fechado devolve false, e sem isso cada item pediria um submenu
+            // novo com o mesmo nome.
+            if (!grupo || std::strcmp(grupo, entry.group) != 0) {
+                fechar();
+                grupo = entry.group;
+                aberto = ImGui::BeginMenu(entry.group);
+            }
+            if (aberto) {
+                added |= draw_entry(app, entry, viewed_id);
+            }
             continue;
         }
 
-        const bool ready = app.chain.can_add(entry.params);
-        OpParams bridge = SourceOp{};
-        const bool bridged = !ready && bridge_for(app.chain, entry.params, &bridge);
-        const char* via = bridged ? op_info(bridge).name : nullptr;
-        char shortcut[48] = {};
-        if (via) {
-            std::snprintf(shortcut, sizeof(shortcut), "via %s", via);
+        fechar();
+        if (primeiro_solto) {
+            ImGui::Separator();
+            primeiro_solto = false;
         }
-
-        if (ImGui::MenuItem(entry.label, via ? shortcut : nullptr, false, ready || bridged)) {
-            // Entra logo depois do que está selecionado, não no fim: quem
-            // acrescenta operação quer continuar dali.
-            int depois = app.viewed + 1;
-            int input = viewed_id;
-            if (bridged) {
-                input = app.chain.add(bridge, viewed_id, depois);
-                ++depois;
-            }
-            app.viewed = app.chain.index_of(app.chain.add(entry.params, input, depois));
-            added = true;
-        }
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            if (bridged) {
-                ImGui::SetTooltip("acrescenta um estágio de %s antes, e deixa ele na cadeia\n"
-                                  "pra você trocar o canal ou o limiar depois",
-                                  via);
-            } else if (!ready) {
-                ImGui::SetTooltip("precisa de %s antes", entry.needs);
-            }
-        }
+        added |= draw_entry(app, entry, viewed_id);
     }
+    fechar();
     return added;
 }
-
-
 
 void draw_chain_panel(App& app, bool dirty_from_outside) {
     ImGui::Begin("Cadeia");
