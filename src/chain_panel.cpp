@@ -273,28 +273,37 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 const int current =
                     (k < static_cast<int>(stage.inputs.size())) ? stage.inputs[k] : -1;
                 const int current_idx = app.chain.index_of(current);
-                char preview[96];
+                const char* slot = input_label(stage.params, k);
+
+                char preview[128];
                 if (current_idx >= 0) {
-                    std::snprintf(preview, sizeof(preview), "entrada: %d %s", current_idx,
+                    std::snprintf(preview, sizeof(preview), "%s: %d %s", slot, current_idx,
                                   op_info(app.chain.stages[current_idx].params).name);
                 } else {
-                    std::snprintf(preview, sizeof(preview), "entrada: (nada)");
+                    std::snprintf(preview, sizeof(preview), "%s: (nada)", slot);
                 }
 
                 ImGui::PushID(k);
                 ImGui::SetNextItemWidth(-1.0f);
                 if (ImGui::BeginCombo("##entrada", preview)) {
                     for (std::size_t j = 0; j < i; ++j) {
-                        const ValueKind produced = op_info(app.chain.stages[j].params).output;
-                        const bool serve = (info.poly != Poly::None)
-                                               ? poly_accepts(info.poly, produced)
-                                               : (produced == info.inputs[k]);
-                        if (!serve) {
+                        if (!app.chain.can_feed(info, k, static_cast<int>(j))) {
                             continue;
                         }
-                        char option[96];
-                        std::snprintf(option, sizeof(option), "%zu %s", j,
-                                      op_info(app.chain.stages[j].params).name);
+
+                        std::string detalhe = stage_summary(app.chain.stages[j].params);
+                        if (detalhe.empty() && app.chain.stages[j].inputs.size() == 1) {
+                            const int veio = app.chain.index_of(app.chain.stages[j].inputs[0]);
+                            if (veio >= 0) {
+                                detalhe = "de " + std::to_string(veio) + " " +
+                                          op_info(app.chain.stages[veio].params).name;
+                            }
+                        }
+
+                        char option[192];
+                        std::snprintf(option, sizeof(option), "%zu %s%s%s", j,
+                                      op_info(app.chain.stages[j].params).name,
+                                      detalhe.empty() ? "" : "   ", detalhe.c_str());
                         if (ImGui::Selectable(option, app.chain.stages[j].id == current)) {
                             if (k < static_cast<int>(stage.inputs.size())) {
                                 stage.inputs[k] = app.chain.stages[j].id;

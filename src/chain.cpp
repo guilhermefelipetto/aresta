@@ -381,21 +381,24 @@ ValueKind Chain::kind_of(int index) const {
     return op_info(stages[index].params).output;
 }
 
-int Chain::find_input(const OpInfo& info, int k, int prefer_id, int limit) const {
-    const auto serves = [&](int index) {
-        const ValueKind produced = kind_of(index);
-        return (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
-                                         : (produced == info.inputs[k]);
-    };
+bool Chain::can_feed(const OpInfo& info, int k, int index) const {
+    if (index < 0 || index >= static_cast<int>(stages.size())) {
+        return false;
+    }
+    const ValueKind produced = kind_of(index);
+    return (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
+                                     : (produced == info.inputs[k]);
+}
 
+int Chain::find_input(const OpInfo& info, int k, int prefer_id, int limit) const {
     if (prefer_id >= 0) {
         const int index = index_of(prefer_id);
-        if (index >= 0 && index < limit && serves(index)) {
+        if (index >= 0 && index < limit && can_feed(info, k, index)) {
             return prefer_id;
         }
     }
     for (int i = limit - 1; i >= 0; --i) {
-        if (serves(i)) {
+        if (can_feed(info, k, i)) {
             return stages[i].id;
         }
     }
@@ -454,12 +457,9 @@ void Chain::wire_inputs(const OpParams& params_of_info, int prefer_id, int limit
     }
 
     std::vector<int> candidatos;
-    for (std::size_t i = 0; i < static_cast<std::size_t>(limit); ++i) {
-        const ValueKind produced = kind_of(static_cast<int>(i));
-        const bool serve = (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
-                                                     : (produced == info.inputs[0]);
-        if (serve) {
-            candidatos.push_back(stages[i].id);
+    for (int i = 0; i < limit; ++i) {
+        if (can_feed(info, 0, i)) {
+            candidatos.push_back(stages[static_cast<std::size_t>(i)].id);
         }
     }
     if (candidatos.empty()) {

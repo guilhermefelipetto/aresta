@@ -212,6 +212,10 @@ struct Chain {
 
     // Id do estágio que serve de entrada k, ou -1 se nenhum serve. `prefer` é
     // tentado primeiro, pra operação nova pendurar no que está sendo olhado.
+    // Uma pergunta, um lugar. Ter isso escrito duas vezes já deixou o combo
+    // filtrando por um critério e a ligação automática por outro.
+    bool can_feed(const OpInfo& info, int k, int index) const;
+
     int find_input(const OpInfo& info, int k, int prefer_id, int limit) const;
 
     // Quando a operação tem várias entradas do mesmo tipo, ligar as três no
