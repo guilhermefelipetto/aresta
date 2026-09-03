@@ -96,6 +96,20 @@ void draw_links(const std::vector<Link>& links, const std::vector<Row>& rows, fl
 
 namespace {
 
+// Texto de apoio quebra linha conforme o painel: a nota do Otsu e o resumo de
+// uma convolução passam fácil da largura, e TextDisabled não envolve.
+void apoio(const char* texto) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", texto);
+    ImGui::PopStyleColor();
+}
+
+void aviso(const char* texto) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.45f, 0.45f, 1.0f));
+    ImGui::TextWrapped("%s", texto);
+    ImGui::PopStyleColor();
+}
+
 struct Entry {
     const char* group;  // nullptr fica solto na raiz
     const char* label;
@@ -318,7 +332,7 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
 
             const std::string resumo = stage_summary(stage.params);
             if (!resumo.empty()) {
-                ImGui::TextDisabled("%s", resumo.c_str());
+                apoio(resumo.c_str());
             }
 
             for (int k = 0; aberto && k < info.input_count; ++k) {
@@ -447,8 +461,11 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     ImGui::EndDisabled();
 
                     if (!op->otsu) {
-                        ImGui::TextDisabled("corta em %.4f, mapa de %.4f a %.4f",
-                                            threshold_absolute(*op, lo, hi), lo, hi);
+                        char resolvido[96];
+                        std::snprintf(resolvido, sizeof(resolvido),
+                                      "corta em %.4f, mapa de %.4f a %.4f",
+                                      threshold_absolute(*op, lo, hi), lo, hi);
+                        apoio(resolvido);
                     }
                     dirty |= ImGui::Checkbox("Otsu", &op->otsu);
                 } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
@@ -529,7 +546,9 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         float lo = 0.0f;
                         float hi = 1.0f;
                         component_range(op->space, op->component, &lo, &hi);
-                        ImGui::TextDisabled("faixa natural %.0f a %.0f", lo, hi);
+                        char faixa[64];
+                        std::snprintf(faixa, sizeof(faixa), "faixa natural %.0f a %.0f", lo, hi);
+                        apoio(faixa);
                     }
                 } else if (auto* op = std::get_if<ComposeOp>(&stage.params)) {
                     int space = static_cast<int>(op->space);
@@ -537,9 +556,11 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         op->space = static_cast<Space>(space);
                         dirty = true;
                     }
-                    ImGui::TextDisabled("%s, %s, %s", component_name(op->space, 0),
-                                        component_name(op->space, 1),
-                                        component_name(op->space, 2));
+                    char partes[128];
+                    std::snprintf(partes, sizeof(partes), "%s, %s, %s",
+                                  component_name(op->space, 0), component_name(op->space, 1),
+                                  component_name(op->space, 2));
+                    apoio(partes);
                 } else if (auto* op = std::get_if<ColorGradientOp>(&stage.params)) {
                     int space = static_cast<int>(op->space);
                     if (ImGui::Combo("##p", &space, "RGB\0HSV\0HSI\0Lab\0YCbCr\0CMY\0")) {
@@ -556,7 +577,7 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     dirty |= ImGui::ColorEdit3("##alvo", op->reference,
                                                ImGuiColorEditFlags_NoInputs |
                                                    ImGuiColorEditFlags_PickerHueWheel);
-                    ImGui::TextDisabled("a cor de referência é dada em sRGB");
+                    apoio("a cor de referência é dada em sRGB");
                 } else if (auto* op = std::get_if<PseudoColorOp>(&stage.params)) {
                     int map = static_cast<int>(op->map);
                     if (ImGui::Combo("##p", &map, "cinza\0viridis\0magma\0turbo\0quente\0")) {
@@ -609,7 +630,7 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         dirty |= ImGui::SliderInt("##it", &op->iterations, 1, 20, "%d rodadas");
                     }
                 } else if (auto* op = std::get_if<HitMissOp>(&stage.params)) {
-                    ImGui::TextDisabled("1 exige objeto, 0 exige fundo, . não olha");
+                    apoio("1 exige objeto, 0 exige fundo, . não olha");
                     for (int j = 0; j < 3; ++j) {
                         for (int i = 0; i < 3; ++i) {
                             if (i > 0) {
@@ -627,7 +648,7 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     }
                 } else if (auto* op = std::get_if<ComponentsOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
-                    ImGui::TextDisabled("filtrar em Ferramentas > Componentes");
+                    apoio("filtrar em Ferramentas > Componentes");
                 } else if (auto* op = std::get_if<MorphologyOp>(&stage.params)) {
                     int operation = static_cast<int>(op->operation);
                     if (ImGui::Combo("##p", &operation,
@@ -676,9 +697,9 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             }
 
             if (!stage.error.empty()) {
-                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", stage.error.c_str());
+                aviso(stage.error.c_str());
             } else if (!stage.note.empty()) {
-                ImGui::TextDisabled("%s", stage.note.c_str());
+                apoio(stage.note.c_str());
             }
 
             ImGui::Unindent();
