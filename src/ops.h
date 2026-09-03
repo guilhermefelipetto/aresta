@@ -31,6 +31,8 @@ constexpr int channel_luma = 3;
 Map<float> channel_of(ImageView image, Space space, int component, const float* weights,
                       bool on_srgb);
 
+void scalar_range(MapView<float> scalar, float* lo, float* hi);
+
 // Acima do nível vira 1, abaixo vira 0. Um rótulo binário ainda é rótulo.
 Map<int32_t> threshold(MapView<float> scalar, float level);
 

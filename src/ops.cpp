@@ -134,6 +134,18 @@ Map<float> channel_of(ImageView image, Space space, int component, const float* 
     return result;
 }
 
+void scalar_range(MapView<float> scalar, float* lo, float* hi) {
+    *lo = std::numeric_limits<float>::max();
+    *hi = std::numeric_limits<float>::lowest();
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            *lo = std::min(*lo, row[x]);
+            *hi = std::max(*hi, row[x]);
+        }
+    }
+}
+
 Map<int32_t> threshold(MapView<float> scalar, float level) {
     Map<int32_t> result(scalar.width, scalar.height);
     for (int y = 0; y < scalar.height; ++y) {

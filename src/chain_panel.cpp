@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -376,9 +377,77 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<GammaOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->gamma, 0.2f, 4.0f, "%.2f");
                 } else if (auto* op = std::get_if<ThresholdOp>(&stage.params)) {
+                    // Faixa da entrada, pra converter entre unidades sem mover
+                    // o corte de lugar.
+                    float lo = 0.0f;
+                    float hi = 1.0f;
+                    if (!stage.inputs.empty()) {
+                        const int fonte = app.chain.index_of(stage.inputs[0]);
+                        if (fonte >= 0 && fonte < static_cast<int>(app.chain.outputs.size()) &&
+                            app.chain.outputs[fonte].kind == ValueKind::Scalar &&
+                            !app.chain.outputs[fonte].empty()) {
+                            scalar_range(app.chain.outputs[fonte].scalar.view(), &lo, &hi);
+                        }
+                    }
+                    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+                    const float maximo = static_cast<float>((1 << op->bits) - 1);
+
                     ImGui::BeginDisabled(op->otsu);
-                    dirty |= ImGui::DragFloat("##p", &op->level, 0.002f, -20.0f, 20.0f, "%.4f");
+                    int unit = static_cast<int>(op->unit);
+                    if (ImGui::Combo("##p", &unit, "absoluto\0fração\0nível\0")) {
+                        const float absoluto = threshold_absolute(*op, lo, hi);
+                        op->unit = static_cast<ThresholdUnit>(unit);
+                        switch (op->unit) {
+                            case ThresholdUnit::Absolute:
+                                op->level = absoluto;
+                                break;
+                            case ThresholdUnit::Fraction:
+                                op->level = (absoluto - lo) / span;
+                                break;
+                            default:
+                                op->level = (absoluto - lo) / span * maximo;
+                                break;
+                        }
+                        dirty = true;
+                    }
+
+                    ImGui::SetNextItemWidth(-1.0f);
+                    switch (op->unit) {
+                        case ThresholdUnit::Absolute:
+                            dirty |= ImGui::DragFloat("##l", &op->level, 0.002f, -1000.0f, 1000.0f,
+                                                      "%.4f");
+                            break;
+                        case ThresholdUnit::Fraction:
+                            dirty |= ImGui::SliderFloat("##l", &op->level, 0.0f, 1.0f,
+                                                        "%.4f da faixa");
+                            break;
+                        default: {
+                            dirty |= ImGui::SliderFloat("##l", &op->level, 0.0f, maximo,
+                                                        "nível %.0f");
+                            static const int tabela[4] = {8, 10, 12, 16};
+                            int escolha = 0;
+                            for (int i = 0; i < 4; ++i) {
+                                if (tabela[i] == op->bits) {
+                                    escolha = i;
+                                }
+                            }
+                            ImGui::SetNextItemWidth(-1.0f);
+                            if (ImGui::Combo("##bits", &escolha,
+                                             "8 bits\0 10 bits\0 12 bits\0 16 bits\0")) {
+                                op->bits = tabela[escolha];
+                                op->level = std::min(op->level,
+                                                     static_cast<float>((1 << op->bits) - 1));
+                                dirty = true;
+                            }
+                            break;
+                        }
+                    }
                     ImGui::EndDisabled();
+
+                    if (!op->otsu) {
+                        ImGui::TextDisabled("corta em %.4f, mapa de %.4f a %.4f",
+                                            threshold_absolute(*op, lo, hi), lo, hi);
+                    }
                     dirty |= ImGui::Checkbox("Otsu", &op->otsu);
                 } else if (auto* op = std::get_if<OverlayOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->opacity, 0.0f, 1.0f, "%.2f");

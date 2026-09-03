@@ -27,7 +27,22 @@ struct ChannelOp {
     float weight[3] = {0.2126f, 0.7152f, 0.0722f};
     bool on_srgb = false;
 };
-struct ThresholdOp { float level = 0.5f; bool otsu = false; };
+// O nível pode ser dito de três jeitos. Absoluto compara com o valor cru do
+// mapa; fração e nível são posições dentro do intervalo dele, o que sobrevive
+// a trocar um canal de luminância por um L de Lab, que vai até 100.
+enum class ThresholdUnit { Absolute, Fraction, Level };
+
+const char* threshold_unit_name(ThresholdUnit unit);
+
+struct ThresholdOp {
+    float level = 0.5f;
+    bool otsu = false;
+    ThresholdUnit unit = ThresholdUnit::Fraction;
+    int bits = 8;
+};
+
+// Converte o que está na UI pro valor absoluto que a comparação usa.
+float threshold_absolute(const ThresholdOp& op, float lo, float hi);
 struct OverlayOp { float opacity = 0.5f; };
 struct MorphologyOp {
     Morph operation = Morph::Erode;

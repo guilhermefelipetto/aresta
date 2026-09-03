@@ -182,11 +182,25 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
                                       op->on_srgb));
     }
     if (const auto* op = std::get_if<ThresholdOp>(&params)) {
-        float level = op->level;
+        float lo = 0.0f;
+        float hi = 1.0f;
+        scalar_range(in[0]->scalar.view(), &lo, &hi);
+
+        float level = 0.0f;
+        char aviso[160];
         if (op->otsu) {
             level = otsu_threshold(in[0]->scalar.view());
-            *note = "Otsu escolheu " + std::to_string(level);
+            const float span = (hi > lo) ? (hi - lo) : 1.0f;
+            std::snprintf(aviso, sizeof(aviso),
+                          "Otsu escolheu %.4f, que é %.4f da faixa, ou nível %.0f de %d", level,
+                          (level - lo) / span, (level - lo) / span * ((1 << op->bits) - 1),
+                          (1 << op->bits) - 1);
+        } else {
+            level = threshold_absolute(*op, lo, hi);
+            std::snprintf(aviso, sizeof(aviso), "corta em %.4f, e o mapa vai de %.4f a %.4f",
+                          level, lo, hi);
         }
+        *note = aviso;
         return make_label(threshold(in[0]->scalar.view(), level));
     }
     if (const auto* op = std::get_if<MorphologyOp>(&params)) {
@@ -298,6 +312,27 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
 }
 
 }  // namespace
+
+const char* threshold_unit_name(ThresholdUnit unit) {
+    switch (unit) {
+        case ThresholdUnit::Absolute: return "absoluto";
+        case ThresholdUnit::Fraction: return "fração";
+        case ThresholdUnit::Level: return "nível";
+    }
+    return "?";
+}
+
+float threshold_absolute(const ThresholdOp& op, float lo, float hi) {
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+    switch (op.unit) {
+        case ThresholdUnit::Absolute:
+            return op.level;
+        case ThresholdUnit::Fraction:
+            return lo + op.level * span;
+        default:
+            return lo + op.level / static_cast<float>((1 << op.bits) - 1) * span;
+    }
+}
 
 bool poly_accepts(Poly poly, ValueKind kind) {
     switch (poly) {
@@ -722,7 +757,15 @@ std::string stage_summary(const OpParams& params) {
         std::snprintf(buffer, sizeof(buffer), "em %s, alvo %.2f %.2f %.2f", space_name(op->space),
                       op->reference[0], op->reference[1], op->reference[2]);
     } else if (const auto* op = std::get_if<ThresholdOp>(&params)) {
-        std::snprintf(buffer, sizeof(buffer), op->otsu ? "Otsu" : "acima de %.4f", op->level);
+        if (op->otsu) {
+            std::snprintf(buffer, sizeof(buffer), "Otsu");
+        } else if (op->unit == ThresholdUnit::Level) {
+            std::snprintf(buffer, sizeof(buffer), "acima do nível %.0f de %d", op->level,
+                          (1 << op->bits) - 1);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "acima de %.4f (%s)", op->level,
+                          threshold_unit_name(op->unit));
+        }
     } else if (const auto* op = std::get_if<MorphologyOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", morph_name(op->operation),
                       op->radius);
