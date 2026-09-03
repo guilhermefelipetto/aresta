@@ -434,9 +434,11 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                             ImGui::SetNextItemWidth(-1.0f);
                             if (ImGui::Combo("##bits", &escolha,
                                              "8 bits\0 10 bits\0 12 bits\0 16 bits\0")) {
+                                // Reescala junto, senão nível 128 de 255 vira
+                                // 128 de 1023 e o corte pula de lugar.
+                                const float fracao = op->level / maximo;
                                 op->bits = tabela[escolha];
-                                op->level = std::min(op->level,
-                                                     static_cast<float>((1 << op->bits) - 1));
+                                op->level = fracao * static_cast<float>((1 << op->bits) - 1);
                                 dirty = true;
                             }
                             break;
