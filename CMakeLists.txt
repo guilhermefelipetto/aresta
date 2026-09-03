@@ -52,6 +52,7 @@ add_executable(aresta
     src/canvas.cpp
     src/chain.cpp
     src/chain_panel.cpp
+    src/components_window.cpp
     src/convolve.cpp
     src/curve_window.cpp
     src/expr.cpp
@@ -65,6 +66,7 @@ add_executable(aresta
     src/kernel_window.cpp
     src/morphology.cpp
     src/ops.cpp
+    src/regions.cpp
     src/texture.cpp
     src/ui.cpp
     src/value.cpp

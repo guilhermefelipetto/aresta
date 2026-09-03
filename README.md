@@ -111,7 +111,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] FFT 2D, espectro centralizado e filtros no domínio da frequência
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
 - [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
-- [x] vizinhança por raio, morfologia e componentes conexas
+- [x] vizinhança por raio, morfologia e componentes conexas, com filtro por área
 - [x] histograma, com equalização global e local, alongamento e Otsu
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [ ] pincel de semente e os algoritmos de grafo

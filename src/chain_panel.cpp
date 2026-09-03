@@ -435,6 +435,7 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                                                     "%.2f", "%.2f");
                 } else if (auto* op = std::get_if<ComponentsOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
+                    ImGui::TextDisabled("filtrar em Ferramentas > Componentes");
                 } else if (auto* op = std::get_if<MorphologyOp>(&stage.params)) {
                     int operation = static_cast<int>(op->operation);
                     if (ImGui::Combo("##p", &operation,
@@ -454,7 +455,8 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     dirty = true;
                 }
                 const bool tem_janela = std::get_if<ConvolveOp>(&stage.params) ||
-                                        std::get_if<CurveOp>(&stage.params);
+                                        std::get_if<CurveOp>(&stage.params) ||
+                                        std::get_if<ComponentsOp>(&stage.params);
                 if (tem_janela) {
                     ImGui::SameLine();
                     if (ImGui::SmallButton("editar")) {

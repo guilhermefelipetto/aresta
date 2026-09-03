@@ -19,6 +19,7 @@
 #include "canvas.h"
 #include "chain.h"
 #include "chain_panel.h"
+#include "components_window.h"
 #include "curve_window.h"
 #include "export_window.h"
 #include "histogram_window.h"
@@ -82,6 +83,7 @@ int main(int argc, char** argv) {
     KernelWindow kernel_window;
     HistogramWindow histogram_window;
     CurveWindow curve_window;
+    ComponentsWindow components_window;
     ExportWindow export_window;
 
     auto open_path = [&](const std::string& file) {
@@ -170,6 +172,7 @@ int main(int argc, char** argv) {
                 ImGui::MenuItem("Kernel...", nullptr, &kernel_window.open);
                 ImGui::MenuItem("Histograma...", nullptr, &histogram_window.open);
                 ImGui::MenuItem("Curva...", nullptr, &curve_window.open);
+                ImGui::MenuItem("Componentes...", nullptr, &components_window.open);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Janela")) {
@@ -324,6 +327,8 @@ int main(int argc, char** argv) {
                     attach_kernel_window(kernel_window, app, app.edit_request);
                 } else if (std::get_if<CurveOp>(&params)) {
                     attach_curve_window(curve_window, app, app.edit_request);
+                } else if (std::get_if<ComponentsOp>(&params)) {
+                    attach_components_window(components_window, app, app.edit_request);
                 }
             }
             app.edit_request = -1;
@@ -338,6 +343,7 @@ int main(int argc, char** argv) {
         draw_kernel_window(kernel_window, kernel_library, app);
         draw_histogram_window(histogram_window, app);
         draw_curve_window(curve_window, app);
+        draw_components_window(components_window, app);
         draw_export_window(export_window, app);
 
         ImGui::Render();

@@ -6,6 +6,7 @@
 
 #include "convolve.h"
 #include "fft.h"
+#include "regions.h"
 #include "ops.h"
 #include "kernel.h"
 #include "morphology.h"
@@ -29,7 +30,10 @@ struct MorphologyOp {
     Morph operation = Morph::Erode;
     float radius = 1.0f;
 };
-struct ComponentsOp { float radius = 1.5f; };
+struct ComponentsOp {
+    float radius = 1.5f;
+    ComponentFilter filter;
+};
 struct EqualizeOp {};
 struct CombineOp {
     Combine operation = Combine::Subtract;

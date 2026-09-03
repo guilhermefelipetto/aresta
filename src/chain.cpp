@@ -159,10 +159,12 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
     }
     if (const auto* op = std::get_if<ComponentsOp>(&params)) {
         const Adjacency adjacency = adjacency_by_radius(op->radius);
-        int found = 0;
-        Map<int32_t> labels = connected_components(in[0]->label.view(), adjacency, &found);
-        *note = std::to_string(found) + " componentes com " +
-                std::to_string(adjacency.offsets.size()) + " vizinhos";
+        std::vector<Region> todas;
+        std::vector<Region> sobraram;
+        Map<int32_t> labels =
+            label_and_filter(in[0]->label.view(), adjacency, op->filter, &todas, &sobraram);
+        *note = std::to_string(sobraram.size()) + " de " + std::to_string(todas.size()) +
+                " componentes, " + std::to_string(adjacency.offsets.size()) + " vizinhos";
         return make_label(std::move(labels));
     }
     if (const auto* op = std::get_if<ConvolveOp>(&params)) {
@@ -463,7 +465,17 @@ std::string stage_summary(const OpParams& params) {
         std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", morph_name(op->operation),
                       op->radius);
     } else if (const auto* op = std::get_if<ComponentsOp>(&params)) {
-        std::snprintf(buffer, sizeof(buffer), "raio %.2f", op->radius);
+        std::string filtros;
+        const auto& f = op->filter;
+        if (f.only_label > 0) {
+            filtros += ", só o " + std::to_string(f.only_label);
+        } else {
+            if (f.min_area > 0) filtros += ", área >= " + std::to_string(f.min_area);
+            if (f.max_area > 0) filtros += ", área <= " + std::to_string(f.max_area);
+            if (f.keep_largest > 0) filtros += ", " + std::to_string(f.keep_largest) + " maiores";
+            if (f.drop_border) filtros += ", sem borda";
+        }
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f%s", op->radius, filtros.c_str());
     } else if (const auto* op = std::get_if<StretchOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "percentis %.2f a %.2f", op->low, op->high);
     } else if (const auto* op = std::get_if<ClaheOp>(&params)) {
