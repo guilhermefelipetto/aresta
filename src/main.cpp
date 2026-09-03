@@ -89,28 +89,44 @@ int main(int argc, char** argv) {
     ComponentsWindow components_window;
     ExportWindow export_window;
 
-    auto open_path = [&](const std::string& file) {
-        if (!app.open(file)) {
-            return false;
-        }
-        SDL_SetWindowTitle(window, (file + " - aresta").c_str());
-        return true;
-    };
-
     bool chain_dirty = false;
     std::string project_path;
     char project_input[1024] = {};
     char attach_input[1024] = {};
     std::string missing_image;
 
+    // Texto do projeto na última vez que ele bateu com o disco. Comparar com o
+    // atual é o que diz se tem coisa não salva.
+    std::string saved_state;
+    bool unsaved = false;
+    long long last_signature = -1;
+
     auto set_title = [&] {
         std::string titulo = "aresta";
         if (!project_path.empty()) {
             titulo = std::filesystem::path(project_path).filename().string() + " - aresta";
         } else if (!app.path.empty()) {
-            titulo = app.path + " - aresta";
+            titulo = std::filesystem::path(app.path).filename().string() + " - aresta";
+        }
+        if (unsaved) {
+            titulo += "*";
         }
         SDL_SetWindowTitle(window, titulo.c_str());
+    };
+
+    auto mark_saved = [&] {
+        saved_state = project_text(app);
+        unsaved = false;
+        set_title();
+    };
+
+    auto open_path = [&](const std::string& file) {
+        if (!app.open(file)) {
+            return false;
+        }
+        project_path.clear();
+        mark_saved();
+        return true;
     };
 
     auto open_project = [&](const std::string& file) {
@@ -123,7 +139,7 @@ int main(int argc, char** argv) {
         chain_dirty = false;
         missing_image = r.missing_image ? r.wanted_image : std::string();
         std::snprintf(attach_input, sizeof(attach_input), "%s", r.wanted_image.c_str());
-        set_title();
+        mark_saved();
         app.status = r.missing_image ? std::string() : "Projeto carregado.";
         return true;
     };
@@ -135,7 +151,7 @@ int main(int argc, char** argv) {
             return false;
         }
         project_path = file;
-        set_title();
+        mark_saved();
         app.status = "Projeto salvo em " + file;
         return true;
     };
@@ -152,6 +168,10 @@ int main(int argc, char** argv) {
             open_path(arg);
         }
     }
+
+    // Sem isso o app vazio já nasceria com asterisco, porque saved_state estaria
+    // em branco e qualquer projeto tem cabeçalho.
+    mark_saved();
 
     char path_input[1024] = {};
     bool open_requested = false;
@@ -532,6 +552,23 @@ int main(int argc, char** argv) {
         draw_curve_window(curve_window, app);
         draw_components_window(components_window, app);
         draw_export_window(export_window, app);
+
+        // Serializar o projeto todo frame seria desperdício, e marcar sujo na
+        // mão esquece campo. Essa assinatura barata muda em toda alteração que
+        // entra no arquivo, e só então vale reserializar pra comparar.
+        {
+            const long long assinatura =
+                app.revision * 1000003LL + app.viewed * 1009LL + app.pinned * 101LL
+                + static_cast<int>(app.colormap) * 7LL + (app.chain_compact ? 1LL : 0LL);
+            if (assinatura != last_signature) {
+                last_signature = assinatura;
+                const bool agora = project_text(app) != saved_state;
+                if (agora != unsaved) {
+                    unsaved = agora;
+                    set_title();
+                }
+            }
+        }
 
         ImGui::Render();
 

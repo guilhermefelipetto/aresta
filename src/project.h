@@ -14,6 +14,11 @@ struct ProjectLoad {
     std::string wanted_image;
 };
 
+// O projeto como texto, que é o que save_project grava. Serve também pra saber
+// se tem coisa não salva: comparar com o texto do disco não deixa campo de
+// fora, e ninguém precisa lembrar de marcar sujo quando acrescenta parâmetro.
+std::string project_text(const App& app);
+
 bool save_project(const App& app, const std::string& file, std::string* error);
 ProjectLoad load_project(App& app, const std::string& file);
 

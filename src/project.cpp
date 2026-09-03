@@ -485,7 +485,7 @@ bool params_de(const std::string& chave, Leitor& leitor, OpParams* saida) {
 
 }  // namespace
 
-bool save_project(const App& app, const std::string& file, std::string* error) {
+std::string project_text(const App& app) {
     std::string texto = "aresta 1\n";
     if (!app.path.empty()) {
         texto += "imagem " + app.path + "\n";
@@ -511,6 +511,11 @@ bool save_project(const App& app, const std::string& file, std::string* error) {
                    const_cast<OpParams&>(stage.params));
         texto += escritor.texto;
     }
+    return texto;
+}
+
+bool save_project(const App& app, const std::string& file, std::string* error) {
+    const std::string texto = project_text(app);
 
     std::ofstream saida(file, std::ios::binary);
     if (!saida) {
