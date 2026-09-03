@@ -140,6 +140,9 @@ enum class Poly {
     ColorOrScalar,
     ScalarOrLabel,
 
+    // Aceita qualquer tipo e devolve o mesmo.
+    Any,
+
     // Entradas de qualquer tipo, contanto que sejam todas o mesmo. A checagem
     // de igualdade fica na avaliação, porque na hora de ligar ainda não se sabe
     // o que cada lado vai produzir.
@@ -206,6 +209,10 @@ struct Chain {
     // Id do estágio que serve de entrada k, ou -1 se nenhum serve. `prefer` é
     // tentado primeiro, pra operação nova pendurar no que está sendo olhado.
     int find_input(const OpInfo& info, int k, int prefer_id) const;
+
+    // Quando a operação tem várias entradas do mesmo tipo, ligar as três no
+    // mesmo estágio nunca é o que a pessoa queria. Espalha pelos últimos.
+    void wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inputs) const;
     bool can_add(const OpParams& params) const;
 
     int add(OpParams params, int prefer_id = -1);

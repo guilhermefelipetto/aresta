@@ -73,6 +73,33 @@ void invert(ImageView image) {
     }
 }
 
+void invert(MapView<float> scalar) {
+    float lo = std::numeric_limits<float>::max();
+    float hi = std::numeric_limits<float>::lowest();
+    for (int y = 0; y < scalar.height; ++y) {
+        const float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            lo = std::min(lo, row[x]);
+            hi = std::max(hi, row[x]);
+        }
+    }
+    for (int y = 0; y < scalar.height; ++y) {
+        float* row = scalar.row(y);
+        for (int x = 0; x < scalar.width; ++x) {
+            row[x] = lo + hi - row[x];
+        }
+    }
+}
+
+void invert(MapView<int32_t> labels) {
+    for (int y = 0; y < labels.height; ++y) {
+        int32_t* row = labels.row(y);
+        for (int x = 0; x < labels.width; ++x) {
+            row[x] = row[x] == 0 ? 1 : 0;
+        }
+    }
+}
+
 Map<float> channel_of(ImageView image, Space space, int component, const float* weights,
                       bool on_srgb) {
     Map<float> result(image.width, image.height);

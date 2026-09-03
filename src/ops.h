@@ -14,7 +14,11 @@ void adjust_exposure(ImageView image, float stops);
 void adjust_contrast(ImageView image, float amount);
 void adjust_gamma(ImageView image, float gamma);
 
+// Cor reflete em torno de 1, escalar em torno do próprio intervalo, e rótulo
+// vira complemento binário: fundo e objeto trocam de lado.
 void invert(ImageView image);
+void invert(MapView<float> scalar);
+void invert(MapView<int32_t> labels);
 
 // Reduz a cor a um número por pixel. `component` de 0 a 2 escolhe dentro do
 // espaço; 3 vale só no RGB e pede a luminância ponderada por `weights`.

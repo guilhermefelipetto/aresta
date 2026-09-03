@@ -1,5 +1,6 @@
 #include "chain.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <type_traits>
 #include <utility>
@@ -163,7 +164,17 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
     }
     if (std::get_if<InvertOp>(&params)) {
         Value out = in[0]->clone();
-        invert(out.color.view());
+        switch (out.kind) {
+            case ValueKind::Color:
+                invert(out.color.view());
+                break;
+            case ValueKind::Scalar:
+                invert(out.scalar.view());
+                break;
+            case ValueKind::Label:
+                invert(out.label.view());
+                break;
+        }
         return out;
     }
     if (const auto* op = std::get_if<ChannelOp>(&params)) {
@@ -249,6 +260,8 @@ bool poly_accepts(Poly poly, ValueKind kind) {
             return kind == ValueKind::Color || kind == ValueKind::Scalar;
         case Poly::ScalarOrLabel:
             return kind == ValueKind::Scalar || kind == ValueKind::Label;
+        case Poly::Any:
+            return true;
         case Poly::Pair:
             return true;
         case Poly::PairTone:
@@ -272,7 +285,7 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, GammaOp>) {
                 return {"gama", 1, {ValueKind::Color}, ValueKind::Color};
             } else if constexpr (std::is_same_v<T, InvertOp>) {
-                return {"inverter", 1, {ValueKind::Color}, ValueKind::Color};
+                return {"inverter", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
             } else if constexpr (std::is_same_v<T, ChannelOp>) {
                 return {"canal", 1, {ValueKind::Color}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ThresholdOp>) {
@@ -399,15 +412,51 @@ bool Chain::can_add(const OpParams& params) const {
     return true;
 }
 
+void Chain::wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inputs) const {
+    inputs->assign(static_cast<std::size_t>(info.input_count), -1);
+    if (info.input_count <= 0) {
+        return;
+    }
+
+    // Entradas que pedem tipos diferentes cada uma acha a sua sozinha.
+    bool mesmo_tipo = true;
+    for (int k = 1; k < info.input_count && mesmo_tipo; ++k) {
+        mesmo_tipo = info.inputs[k] == info.inputs[0];
+    }
+    if (!mesmo_tipo || info.input_count == 1) {
+        for (int k = 0; k < info.input_count; ++k) {
+            (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id);
+        }
+        return;
+    }
+
+    std::vector<int> candidatos;
+    for (std::size_t i = 0; i < stages.size(); ++i) {
+        const ValueKind produced = kind_of(static_cast<int>(i));
+        const bool serve = (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
+                                                     : (produced == info.inputs[0]);
+        if (serve) {
+            candidatos.push_back(stages[i].id);
+        }
+    }
+    if (candidatos.empty()) {
+        return;
+    }
+
+    const int sobra = static_cast<int>(candidatos.size()) - info.input_count;
+    for (int k = 0; k < info.input_count; ++k) {
+        const int at = std::max(0, sobra + k);
+        (*inputs)[static_cast<std::size_t>(k)] =
+            candidatos[static_cast<std::size_t>(std::min(at, static_cast<int>(candidatos.size()) - 1))];
+    }
+}
+
 int Chain::add(OpParams params, int prefer_id) {
     Stage stage;
     stage.id = next_id++;
     stage.params = std::move(params);
 
-    const OpInfo info = op_info(stage.params);
-    for (int k = 0; k < info.input_count; ++k) {
-        stage.inputs.push_back(find_input(info, k, prefer_id));
-    }
+    wire_inputs(op_info(stage.params), prefer_id, &stage.inputs);
 
     stages.push_back(std::move(stage));
     return stages.back().id;
