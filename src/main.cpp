@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -25,6 +26,7 @@
 #include "export_window.h"
 #include "histogram_window.h"
 #include "kernel_window.h"
+#include "project.h"
 #include "ui.h"
 
 int main(int argc, char** argv) {
@@ -95,13 +97,66 @@ int main(int argc, char** argv) {
         return true;
     };
 
+    bool chain_dirty = false;
+    std::string project_path;
+    char project_input[1024] = {};
+    char attach_input[1024] = {};
+    std::string missing_image;
+
+    auto set_title = [&] {
+        std::string titulo = "aresta";
+        if (!project_path.empty()) {
+            titulo = std::filesystem::path(project_path).filename().string() + " - aresta";
+        } else if (!app.path.empty()) {
+            titulo = app.path + " - aresta";
+        }
+        SDL_SetWindowTitle(window, titulo.c_str());
+    };
+
+    auto open_project = [&](const std::string& file) {
+        const ProjectLoad r = load_project(app, file);
+        if (!r.ok) {
+            app.status = r.error;
+            return false;
+        }
+        project_path = file;
+        chain_dirty = false;
+        missing_image = r.missing_image ? r.wanted_image : std::string();
+        std::snprintf(attach_input, sizeof(attach_input), "%s", r.wanted_image.c_str());
+        set_title();
+        app.status = r.missing_image ? std::string() : "Projeto carregado.";
+        return true;
+    };
+
+    auto save_project_to = [&](const std::string& file) {
+        std::string erro;
+        if (!save_project(app, file, &erro)) {
+            app.status = erro;
+            return false;
+        }
+        project_path = file;
+        set_title();
+        app.status = "Projeto salvo em " + file;
+        return true;
+    };
+
     if (argc > 1) {
-        open_path(argv[1]);
+        const std::string arg = argv[1];
+        const bool eh_projeto =
+            arg.size() > std::strlen(project_suffix())
+            && arg.compare(arg.size() - std::strlen(project_suffix()),
+                           std::string::npos, project_suffix()) == 0;
+        if (eh_projeto) {
+            open_project(arg);
+        } else {
+            open_path(arg);
+        }
     }
 
     char path_input[1024] = {};
     bool open_requested = false;
-    bool chain_dirty = false;
+    bool open_project_requested = false;
+    bool save_as_requested = false;
     bool rodando = true;
 
     while (rodando) {
@@ -116,7 +171,14 @@ int main(int argc, char** argv) {
                 rodando = false;
             }
             if (ev.type == SDL_DROPFILE) {
-                open_path(ev.drop.file);
+                const std::string solto = ev.drop.file;
+                const std::size_t n = std::strlen(project_suffix());
+                if (solto.size() > n
+                    && solto.compare(solto.size() - n, std::string::npos, project_suffix()) == 0) {
+                    open_project(solto);
+                } else {
+                    open_path(solto);
+                }
                 SDL_free(ev.drop.file);
             }
         }
@@ -136,6 +198,13 @@ int main(int argc, char** argv) {
             if (ImGui::IsKeyPressed(ImGuiKey_Q)) {
                 rodando = false;
             }
+            if (ImGui::IsKeyPressed(ImGuiKey_S)) {
+                if (io.KeyShift || project_path.empty()) {
+                    save_as_requested = true;
+                } else {
+                    save_project_to(project_path);
+                }
+            }
         }
 
         if (ImGui::BeginMainMenuBar()) {
@@ -145,6 +214,20 @@ int main(int argc, char** argv) {
                 }
                 if (ImGui::MenuItem("Exportar como...", "Ctrl+E", false, !app.source.empty())) {
                     open_export_window(export_window, app);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Abrir projeto...")) {
+                    open_project_requested = true;
+                }
+                if (ImGui::MenuItem("Salvar projeto", "Ctrl+S")) {
+                    if (project_path.empty()) {
+                        save_as_requested = true;
+                    } else {
+                        save_project_to(project_path);
+                    }
+                }
+                if (ImGui::MenuItem("Salvar projeto como...", "Ctrl+Shift+S")) {
+                    save_as_requested = true;
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Sair", "Ctrl+Q")) {
@@ -237,6 +320,100 @@ int main(int argc, char** argv) {
             ImGui::SameLine();
             if (ImGui::Button("Cancelar")) {
                 app.status.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!app.status.empty()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", app.status.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        if (open_project_requested) {
+            std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
+            ImGui::OpenPopup("Abrir projeto");
+            open_project_requested = false;
+        }
+        if (ImGui::BeginPopupModal("Abrir projeto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Caminho do projeto:");
+            ImGui::SetNextItemWidth(460.0f);
+            const bool enviou = ImGui::InputText("##projeto", project_input, sizeof(project_input),
+                                                 ImGuiInputTextFlags_EnterReturnsTrue);
+            if (ImGui::Button("Abrir") || enviou) {
+                if (open_project(project_input)) {
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                app.status.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!app.status.empty()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", app.status.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        if (save_as_requested) {
+            if (project_path.empty()) {
+                // Sem projeto ainda: propõe o nome da imagem, na pasta dela.
+                std::filesystem::path sugestao =
+                    app.path.empty() ? std::filesystem::path("projeto")
+                                     : std::filesystem::path(app.path).replace_extension();
+                sugestao += project_suffix();
+                std::snprintf(project_input, sizeof(project_input), "%s", sugestao.c_str());
+            } else {
+                std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
+            }
+            ImGui::OpenPopup("Salvar projeto");
+            save_as_requested = false;
+        }
+        if (ImGui::BeginPopupModal("Salvar projeto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("Salvar em:");
+            ImGui::SetNextItemWidth(460.0f);
+            const bool enviou = ImGui::InputText("##salvar", project_input, sizeof(project_input),
+                                                 ImGuiInputTextFlags_EnterReturnsTrue);
+            if (ImGui::Button("Salvar") || enviou) {
+                if (save_project_to(project_input)) {
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                app.status.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            if (!app.status.empty()) {
+                ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", app.status.c_str());
+            }
+            ImGui::EndPopup();
+        }
+
+        if (!missing_image.empty() && !ImGui::IsPopupOpen("Imagem não encontrada")) {
+            ImGui::OpenPopup("Imagem não encontrada");
+        }
+        if (ImGui::BeginPopupModal("Imagem não encontrada", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("O projeto abriu, mas a imagem que ele aponta não está lá:");
+            ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", missing_image.c_str());
+            ImGui::Spacing();
+            ImGui::TextUnformatted("Anexar outra imagem:");
+            ImGui::SetNextItemWidth(460.0f);
+            const bool enviou = ImGui::InputText("##anexar", attach_input, sizeof(attach_input),
+                                                 ImGuiInputTextFlags_EnterReturnsTrue);
+            if (ImGui::Button("Anexar") || enviou) {
+                if (app.open(attach_input)) {
+                    app.evaluate();
+                    app.upload_view();
+                    missing_image.clear();
+                    chain_dirty = false;
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Seguir sem imagem")) {
+                app.status.clear();
+                missing_image.clear();
                 ImGui::CloseCurrentPopup();
             }
             if (!app.status.empty()) {

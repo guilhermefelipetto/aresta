@@ -67,6 +67,7 @@ add_executable(aresta
     src/kernel_window.cpp
     src/morphology.cpp
     src/ops.cpp
+    src/project.cpp
     src/regions.cpp
     src/restore.cpp
     src/segment.cpp

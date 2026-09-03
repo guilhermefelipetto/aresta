@@ -126,6 +126,6 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [ ] pincel de semente e os algoritmos de grafo
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir
 - [x] exportar estágio: PNG, JPEG, BMP, TGA, Netpbm, PFM, CSV, NPY
-- [ ] salvar e carregar o projeto
+- [x] salvar e carregar o projeto
 
 Desenvolvido no Ubuntu 24.04.
