@@ -25,6 +25,11 @@ CurveOp current_op(const CurveWindow& window) {
     return op;
 }
 
+bool differs(const CurveOp& a, const CurveOp& b) {
+    return a.a != b.a || a.b != b.b || a.c != b.c || a.on_srgb != b.on_srgb ||
+           std::strcmp(a.expression, b.expression) != 0;
+}
+
 void write_back(CurveWindow& window, App& app) {
     const int index = app.chain.index_of(window.editing);
     if (index < 0) {
@@ -232,8 +237,13 @@ void draw_curve_window(CurveWindow& window, App& app) {
             ImGui::TextWrapped("%s", window.message.c_str());
         }
 
-        if (changed && window.editing >= 0 && window.error.empty()) {
-            write_back(window, app);
+        if (window.editing >= 0 && window.error.empty()) {
+            const int bound = app.chain.index_of(window.editing);
+            const auto* stored =
+                bound >= 0 ? std::get_if<CurveOp>(&app.chain.stages[bound].params) : nullptr;
+            if (stored && (changed || differs(current_op(window), *stored))) {
+                write_back(window, app);
+            }
         }
     }
     ImGui::EndGroup();

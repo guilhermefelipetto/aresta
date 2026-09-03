@@ -159,7 +159,7 @@ void create_stage(KernelWindow& window, App& app) {
     app.evaluate();
 }
 
-void draw_grid(KernelWindow& window) {
+bool draw_grid(KernelWindow& window) {
     float peak = 0.0f;
     for (float v : window.kernel.values) {
         peak = std::max(peak, std::fabs(v));
@@ -177,6 +177,7 @@ void draw_grid(KernelWindow& window) {
     const float cell = std::clamp(wanted, 40.0f, 62.0f);
     const char* format = cell < 54.0f ? "%.2f" : "%.3f";
 
+    bool mexeu = false;
     ImGui::BeginChild("grade", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_HorizontalScrollbar);
     for (int y = 0; y < window.kernel.height; ++y) {
@@ -197,12 +198,29 @@ void draw_grid(KernelWindow& window) {
                                              0.19f + 0.10f * weight, 1.0f);
             ImGui::PushStyleColor(ImGuiCol_FrameBg, tint);
             ImGui::SetNextItemWidth(cell);
-            ImGui::InputFloat("##c", &window.kernel.at(x, y), 0.0f, 0.0f, format);
+            mexeu |= ImGui::InputFloat("##c", &window.kernel.at(x, y), 0.0f, 0.0f, format);
             ImGui::PopStyleColor();
             ImGui::PopID();
         }
     }
     ImGui::EndChild();
+    return mexeu;
+}
+
+// Rede de segurança: em vez de depender de eu capturar o retorno de todo
+// widget, a janela compara o que tem com o que está gravado no estágio. Widget
+// novo que eu esquecer de ligar continua funcionando.
+bool differs(const ConvolveOp& a, const ConvolveOp& b) {
+    if (a.border != b.border || a.flip != b.flip || a.normalize != b.normalize ||
+        a.kernel.width != b.kernel.width || a.kernel.height != b.kernel.height) {
+        return true;
+    }
+    for (std::size_t i = 0; i < a.kernel.values.size(); ++i) {
+        if (a.kernel.values[i] != b.kernel.values[i]) {
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace
@@ -280,7 +298,7 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
         }
 
         ImGui::Spacing();
-        draw_grid(window);
+        changed |= draw_grid(window);
     }
     ImGui::EndChild();
 
@@ -452,8 +470,13 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
     }
     ImGui::EndChild();
 
-    if (changed && window.editing >= 0) {
-        write_back(window, app);
+    if (window.editing >= 0) {
+        const int bound = app.chain.index_of(window.editing);
+        const auto* stored =
+            bound >= 0 ? std::get_if<ConvolveOp>(&app.chain.stages[bound].params) : nullptr;
+        if (stored && (changed || differs(current_op(window), *stored))) {
+            write_back(window, app);
+        }
     }
 
     ImGui::End();
