@@ -68,6 +68,7 @@ add_executable(aresta
     src/ops.cpp
     src/regions.cpp
     src/restore.cpp
+    src/segment.cpp
     src/spaces.cpp
     src/texture.cpp
     src/ui.cpp

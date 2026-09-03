@@ -8,6 +8,7 @@
 #include "fft.h"
 #include "regions.h"
 #include "restore.h"
+#include "segment.h"
 #include "ops.h"
 #include "kernel.h"
 #include "morphology.h"
@@ -33,6 +34,22 @@ struct MorphologyOp {
     float radius = 1.0f;
 };
 struct DistanceOp { bool inside = true; };
+struct CannyOp {
+    float sigma = 1.2f;
+    float low = 0.10f;
+    float high = 0.25f;
+};
+struct LogEdgeOp {
+    float sigma = 1.5f;
+    float slope = 0.02f;
+};
+struct AdaptiveThresholdOp {
+    LocalThreshold kind = LocalThreshold::Mean;
+    float radius = 8.0f;
+    float offset = 0.02f;
+    float k = 0.2f;
+};
+struct MultiOtsuOp { int classes = 3; };
 struct ReconstructOp { float radius = 1.5f; };
 struct FillHolesOp { float radius = 1.5f; };
 struct ThinOp {
@@ -140,7 +157,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               FreqFilterOp, NoiseOp, MeanOp, AdaptiveOp,
                               AdaptiveMedianOp, DegradeOp, RestoreOp, ColorGradientOp,
                               ColorDistanceOp, PseudoColorOp, DistanceOp,
-                              ReconstructOp, FillHolesOp, ThinOp, HitMissOp>;
+                              ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
+                              LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

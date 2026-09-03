@@ -172,6 +172,10 @@ bool draw_operation_items(App& app) {
         {"Cor", "pseudo-cor", PseudoColorOp{}, "um estágio escalar"},
 
         {"Binário", "threshold", ThresholdOp{}, "um estágio escalar, tipo canal"},
+        {"Binário", "limiar local", AdaptiveThresholdOp{}, "um estágio escalar"},
+        {"Binário", "multi-Otsu", MultiOtsuOp{}, "um estágio escalar"},
+        {"Binário", "canny", CannyOp{}, "um estágio escalar"},
+        {"Binário", "zero-crossings", LogEdgeOp{}, "um estágio escalar"},
         {"Binário", "morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
         {"Binário", "hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
         {"Binário", "afinar", ThinOp{}, "um estágio de rótulo"},
@@ -491,6 +495,32 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
                                                     "%.2f", "%.2f");
+                } else if (auto* op = std::get_if<CannyOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->sigma, 0.0f, 5.0f, "sigma %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragFloatRange2("##lim", &op->low, &op->high, 0.002f, 0.0f,
+                                                    1.0f, "fraco %.3f", "forte %.3f");
+                } else if (auto* op = std::get_if<LogEdgeOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->sigma, 0.5f, 6.0f, "sigma %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##s", &op->slope, 0.0f, 0.3f, "corte %.3f");
+                } else if (auto* op = std::get_if<AdaptiveThresholdOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind, "média\0gaussiana\0Sauvola\0")) {
+                        op->kind = static_cast<LocalThreshold>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##r", &op->radius, 1.0f, 30.0f, "raio %.0f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (op->kind == LocalThreshold::Sauvola) {
+                        dirty |= ImGui::SliderFloat("##k", &op->k, 0.0f, 1.0f, "k %.2f");
+                    } else {
+                        dirty |= ImGui::DragFloat("##o", &op->offset, 0.001f, -0.5f, 0.5f,
+                                                  "desconta %.3f");
+                    }
+                } else if (auto* op = std::get_if<MultiOtsuOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->classes, 2, 4, "%d classes");
                 } else if (auto* op = std::get_if<DistanceOp>(&stage.params)) {
                     dirty |= ImGui::Checkbox("medir de dentro", &op->inside);
                 } else if (auto* op = std::get_if<FillHolesOp>(&stage.params)) {

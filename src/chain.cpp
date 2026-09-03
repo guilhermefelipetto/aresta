@@ -233,6 +233,26 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return out;
     }
+    if (const auto* op = std::get_if<CannyOp>(&params)) {
+        return make_label(canny(in[0]->scalar.view(), op->sigma, op->low, op->high));
+    }
+    if (const auto* op = std::get_if<LogEdgeOp>(&params)) {
+        return make_label(log_zero_crossings(in[0]->scalar.view(), op->sigma, op->slope));
+    }
+    if (const auto* op = std::get_if<AdaptiveThresholdOp>(&params)) {
+        return make_label(adaptive_threshold(in[0]->scalar.view(), op->kind, op->radius,
+                                             op->offset, op->k));
+    }
+    if (const auto* op = std::get_if<MultiOtsuOp>(&params)) {
+        std::vector<float> niveis;
+        Map<int32_t> saida = multi_otsu(in[0]->scalar.view(), op->classes, &niveis);
+        std::string texto = "cortes em";
+        for (float nivel : niveis) {
+            texto += " " + std::to_string(nivel).substr(0, 6);
+        }
+        *note = texto;
+        return make_label(std::move(saida));
+    }
     if (const auto* op = std::get_if<DistanceOp>(&params)) {
         return make_scalar(distance_transform(in[0]->label.view(), op->inside));
     }
@@ -321,6 +341,14 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, MorphologyOp>) {
                 return {"morfologia", 1, {ValueKind::Scalar}, ValueKind::Scalar,
                         Poly::ScalarOrLabel};
+            } else if constexpr (std::is_same_v<T, CannyOp>) {
+                return {"canny", 1, {ValueKind::Scalar}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, LogEdgeOp>) {
+                return {"zero-crossings", 1, {ValueKind::Scalar}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, AdaptiveThresholdOp>) {
+                return {"limiar local", 1, {ValueKind::Scalar}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, MultiOtsuOp>) {
+                return {"multi-Otsu", 1, {ValueKind::Scalar}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, DistanceOp>) {
                 return {"distância", 1, {ValueKind::Label}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ReconstructOp>) {
@@ -698,6 +726,20 @@ std::string stage_summary(const OpParams& params) {
     } else if (const auto* op = std::get_if<MorphologyOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", morph_name(op->operation),
                       op->radius);
+    } else if (const auto* op = std::get_if<CannyOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "sigma %.2f, %.3f a %.3f", op->sigma, op->low,
+                      op->high);
+    } else if (const auto* op = std::get_if<LogEdgeOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "sigma %.2f, corte %.3f", op->sigma, op->slope);
+    } else if (const auto* op = std::get_if<AdaptiveThresholdOp>(&params)) {
+        if (op->kind == LocalThreshold::Sauvola) {
+            std::snprintf(buffer, sizeof(buffer), "Sauvola, raio %.0f, k %.2f", op->radius, op->k);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s, raio %.0f, desconta %.3f",
+                          local_threshold_name(op->kind), op->radius, op->offset);
+        }
+    } else if (const auto* op = std::get_if<MultiOtsuOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d classes", op->classes);
     } else if (const auto* op = std::get_if<DistanceOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), op->inside ? "de dentro até o fundo"
                                                          : "do fundo até o objeto");

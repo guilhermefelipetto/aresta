@@ -113,6 +113,8 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] degradação, filtro inverso, Wiener e mínimos quadrados restritos
 - [x] HSV, HSI, Lab, YCbCr e CMY, gradiente de cor e pseudo-cor
 - [x] distância exata, reconstrução geodésica, esqueleto e hit-or-miss
+- [x] Canny, zero-crossings do LoG, limiar local e multi-Otsu
+- [ ] Hough, crescimento de região e watershed
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
 - [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
 - [x] vizinhança por raio, morfologia e componentes conexas, com filtro por área
