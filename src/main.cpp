@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <SDL.h>
 #include <SDL_opengl.h>
@@ -23,6 +24,7 @@
 #include "chain_panel.h"
 #include "components_window.h"
 #include "curve_window.h"
+#include "dialog.h"
 #include "export_window.h"
 #include "histogram_window.h"
 #include "kernel_window.h"
@@ -95,6 +97,11 @@ int main(int argc, char** argv) {
     char attach_input[1024] = {};
     std::string missing_image;
 
+    const std::vector<FileFilter> filtro_imagem = {
+        {"Imagens", {"*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tga", "*.gif", "*.psd", "*.hdr",
+                     "*.pgm", "*.ppm", "*.pnm"}}};
+    const std::vector<FileFilter> filtro_projeto = {{"Projeto do aresta", {"*.aresta"}}};
+
     // Texto do projeto na última vez que ele bateu com o disco. Comparar com o
     // atual é o que diz se tem coisa não salva.
     std::string saved_state;
@@ -126,6 +133,17 @@ int main(int argc, char** argv) {
         }
         project_path.clear();
         mark_saved();
+        return true;
+    };
+
+    auto swap_image = [&](const std::string& file) {
+        if (!app.open(file, true)) {
+            return false;
+        }
+        app.evaluate();
+        app.upload_view();
+        set_title();
+        app.status = "Imagem trocada, cadeia mantida.";
         return true;
     };
 
@@ -164,6 +182,11 @@ int main(int argc, char** argv) {
                            std::string::npos, project_suffix()) == 0;
         if (eh_projeto) {
             open_project(arg);
+            // ./aresta projeto.aresta outra.png roda a mesma cadeia noutra
+            // imagem, sem precisar salvar um projeto novo pra isso.
+            if (argc > 2 && swap_image(argv[2])) {
+                missing_image.clear();
+            }
         } else {
             open_path(arg);
         }
@@ -174,6 +197,8 @@ int main(int argc, char** argv) {
     mark_saved();
 
     char path_input[1024] = {};
+    char image_input[1024] = {};
+    std::string image_input_from;
     bool open_requested = false;
     bool open_project_requested = false;
     bool save_as_requested = false;
@@ -324,8 +349,15 @@ int main(int argc, char** argv) {
         }
 
         if (open_requested) {
-            ImGui::OpenPopup("Abrir imagem");
             open_requested = false;
+            std::string escolhido;
+            const PickResult r =
+                pick_open_file("Abrir imagem", app.path, filtro_imagem, &escolhido);
+            if (r == PickResult::Chose) {
+                open_path(escolhido);
+            } else if (r == PickResult::Unavailable) {
+                ImGui::OpenPopup("Abrir imagem");
+            }
         }
         if (ImGui::BeginPopupModal("Abrir imagem", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted("Caminho do arquivo:");
@@ -349,9 +381,16 @@ int main(int argc, char** argv) {
         }
 
         if (open_project_requested) {
-            std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
-            ImGui::OpenPopup("Abrir projeto");
             open_project_requested = false;
+            std::string escolhido;
+            const PickResult r =
+                pick_open_file("Abrir projeto", project_path, filtro_projeto, &escolhido);
+            if (r == PickResult::Chose) {
+                open_project(escolhido);
+            } else if (r == PickResult::Unavailable) {
+                std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
+                ImGui::OpenPopup("Abrir projeto");
+            }
         }
         if (ImGui::BeginPopupModal("Abrir projeto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted("Caminho do projeto:");
@@ -385,8 +424,22 @@ int main(int argc, char** argv) {
             } else {
                 std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
             }
-            ImGui::OpenPopup("Salvar projeto");
             save_as_requested = false;
+            std::string escolhido;
+            const PickResult r =
+                pick_save_file("Salvar projeto", project_input, filtro_projeto, &escolhido);
+            if (r == PickResult::Chose) {
+                // Sem sufixo o arquivo não volta pelo filtro do seletor.
+                const std::size_t n = std::strlen(project_suffix());
+                if (escolhido.size() <= n
+                    || escolhido.compare(escolhido.size() - n, std::string::npos,
+                                         project_suffix()) != 0) {
+                    escolhido += project_suffix();
+                }
+                save_project_to(escolhido);
+            } else if (r == PickResult::Unavailable) {
+                ImGui::OpenPopup("Salvar projeto");
+            }
         }
         if (ImGui::BeginPopupModal("Salvar projeto", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted("Salvar em:");
@@ -418,6 +471,13 @@ int main(int argc, char** argv) {
             ImGui::TextColored(ImVec4(0.9f, 0.45f, 0.45f, 1.0f), "%s", missing_image.c_str());
             ImGui::Spacing();
             ImGui::TextUnformatted("Anexar outra imagem:");
+            if (ImGui::Button("Procurar...")) {
+                std::string escolhido;
+                if (pick_open_file("Anexar imagem", missing_image, filtro_imagem, &escolhido)
+                    == PickResult::Chose) {
+                    std::snprintf(attach_input, sizeof(attach_input), "%s", escolhido.c_str());
+                }
+            }
             ImGui::SetNextItemWidth(460.0f);
             const bool enviou = ImGui::InputText("##anexar", attach_input, sizeof(attach_input),
                                                  ImGuiInputTextFlags_EnterReturnsTrue);
@@ -480,7 +540,29 @@ int main(int argc, char** argv) {
             ImGui::TextDisabled("Nenhuma imagem.");
         } else {
             ImGui::TextDisabled("Arquivo");
-            ImGui::TextWrapped("%s", app.path.c_str());
+            // O campo segue app.path, menos enquanto está sendo digitado.
+            if (image_input_from != app.path && !ImGui::IsAnyItemActive()) {
+                image_input_from = app.path;
+                std::snprintf(image_input, sizeof(image_input), "%s", app.path.c_str());
+            }
+            ImGui::SetNextItemWidth(-70.0f);
+            const bool trocou = ImGui::InputText("##arquivo", image_input, sizeof(image_input),
+                                                 ImGuiInputTextFlags_EnterReturnsTrue);
+            ImGui::SameLine();
+            if (ImGui::Button("trocar")) {
+                std::string escolhido;
+                if (pick_open_file("Trocar imagem", app.path, filtro_imagem, &escolhido)
+                    == PickResult::Chose) {
+                    swap_image(escolhido);
+                } else {
+                    // Sem seletor, o campo do lado já resolve.
+                    ImGui::SetKeyboardFocusHere(-2);
+                }
+            }
+            if (trocou) {
+                swap_image(image_input);
+            }
+            ImGui::TextDisabled("a cadeia continua a mesma");
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();

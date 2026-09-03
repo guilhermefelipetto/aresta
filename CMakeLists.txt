@@ -55,6 +55,7 @@ add_executable(aresta
     src/components_window.cpp
     src/convolve.cpp
     src/curve_window.cpp
+    src/dialog.cpp
     src/expr.cpp
     src/export.cpp
     src/export_window.cpp
