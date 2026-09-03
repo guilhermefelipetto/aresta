@@ -288,6 +288,12 @@ struct Stage {
 
     std::string error;
 
+    // Quanto essa operação levou na última avaliação, e quanto custou tudo que
+    // esse resultado precisou. Numa cadeia reta os dois andam juntos; com
+    // ramo, o acumulado só conta quem alimenta esse estágio.
+    double ms = 0.0;
+    double ms_total = 0.0;
+
     // Recado informativo do próprio operador, tipo o nível que o Otsu escolheu
     // ou quantas componentes saíram. Limpo a cada avaliação.
     std::string note;

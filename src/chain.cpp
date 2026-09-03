@@ -1,6 +1,7 @@
 #include "chain.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <numbers>
@@ -761,9 +762,13 @@ void Chain::evaluate(const Image& source) {
         Stage& stage = stages[i];
         stage.error.clear();
         stage.note.clear();
+        stage.ms = 0.0;
 
         if (std::get_if<SourceOp>(&stage.params)) {
+            const auto t0 = std::chrono::steady_clock::now();
             outputs[i] = make_color(source.clone());
+            stage.ms = std::chrono::duration<double, std::milli>(
+                           std::chrono::steady_clock::now() - t0).count();
             continue;
         }
 
@@ -808,11 +813,39 @@ void Chain::evaluate(const Image& source) {
         if (!stage.error.empty()) {
             continue;
         }
+        const auto t0 = std::chrono::steady_clock::now();
         if (!stage.enabled) {
             outputs[i] = in[0]->clone();
-            continue;
+        } else {
+            outputs[i] = apply_op(stage.params, in, &stage.note);
         }
-        outputs[i] = apply_op(stage.params, in, &stage.note);
+        stage.ms = std::chrono::duration<double, std::milli>(
+                       std::chrono::steady_clock::now() - t0).count();
+    }
+
+    // Acumulado é a soma do próprio com tudo que ele precisou. Anda pela
+    // dependência em vez de somar de 0 até i, senão um ramo paralelo que não
+    // alimenta esse estágio entraria na conta. O visitado evita contar duas
+    // vezes quem alimenta dois caminhos.
+    std::vector<char> visto(stages.size());
+    std::vector<int> pilha;
+    for (std::size_t i = 0; i < stages.size(); ++i) {
+        std::fill(visto.begin(), visto.end(), char{0});
+        double soma = 0.0;
+        pilha.assign(1, static_cast<int>(i));
+        while (!pilha.empty()) {
+            const int j = pilha.back();
+            pilha.pop_back();
+            if (j < 0 || j >= static_cast<int>(stages.size()) || visto[j]) {
+                continue;
+            }
+            visto[j] = 1;
+            soma += stages[j].ms;
+            for (int id : stages[j].inputs) {
+                pilha.push_back(index_of(id));
+            }
+        }
+        stages[i].ms_total = soma;
     }
 }
 

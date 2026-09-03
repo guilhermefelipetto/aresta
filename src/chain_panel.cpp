@@ -322,6 +322,24 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             rows.push_back({stage.id,
                             (ImGui::GetItemRectMin().y + ImGui::GetItemRectMax().y) * 0.5f});
 
+            // Tempo colado na direita da linha, apagado. Desenhado direto na
+            // lista em vez de virar widget: assim não empurra o layout nem
+            // rouba clique do Selectable que está embaixo. Abaixo de 0.05 ms
+            // não aparece, senão a cadeia vira parede de "0.0 ms" sem dizer
+            // nada, e o número deixa de chamar atenção justo onde ele importa.
+            if (stage.ms >= 0.05) {
+                char tempo[32];
+                std::snprintf(tempo, sizeof(tempo), "%.1f ms", stage.ms);
+                const ImVec2 canto_min = ImGui::GetItemRectMin();
+                const ImVec2 canto_max = ImGui::GetItemRectMax();
+                const float largura = ImGui::CalcTextSize(tempo).x;
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2(canto_max.x - largura - 4.0f,
+                           canto_min.y + (canto_max.y - canto_min.y
+                                          - ImGui::GetTextLineHeight()) * 0.5f),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled), tempo);
+            }
+
             ImGui::SameLine();
             if (is_pinned) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
@@ -340,6 +358,15 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
 
             ImGui::Indent();
             const bool aberto = is_viewed || !app.chain_compact;
+
+            // No estágio aberto vale o detalhe, porque ali você já está
+            // olhando um de cada vez.
+            if (aberto && stage.ms_total >= 0.05) {
+                char detalhe[96];
+                std::snprintf(detalhe, sizeof(detalhe), "%.2f ms nessa, %.2f ms até aqui",
+                              stage.ms, stage.ms_total);
+                apoio(detalhe);
+            }
 
             const std::string resumo = stage_summary(stage.params);
             if (!resumo.empty()) {
