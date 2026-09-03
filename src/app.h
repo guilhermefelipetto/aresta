@@ -44,7 +44,10 @@ struct App {
     // Índice do que está na tela: o fixado quando existe, senão o selecionado.
     int shown() const;
 
-    bool open(const std::string& file);
+    // Abrir imagem nova zera a cadeia, que é o certo quando você troca de
+    // trabalho. Quem está carregando projeto ou religando a imagem que faltou
+    // pede pra manter, senão a imagem entra e leva o projeto junto.
+    bool open(const std::string& file, bool keep_chain = false);
     void evaluate();
     void upload_view();
 };

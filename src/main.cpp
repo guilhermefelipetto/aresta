@@ -402,7 +402,7 @@ int main(int argc, char** argv) {
             const bool enviou = ImGui::InputText("##anexar", attach_input, sizeof(attach_input),
                                                  ImGuiInputTextFlags_EnterReturnsTrue);
             if (ImGui::Button("Anexar") || enviou) {
-                if (app.open(attach_input)) {
+                if (app.open(attach_input, true)) {
                     app.evaluate();
                     app.upload_view();
                     missing_image.clear();

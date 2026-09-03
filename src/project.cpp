@@ -626,19 +626,20 @@ ProjectLoad load_project(App& app, const std::string& file) {
         nova.stages.push_back(std::move(stage));
     }
 
+    // A imagem entra antes da cadeia, porque abrir imagem zera a cadeia. Se ela
+    // sumiu o projeto abre do mesmo jeito: o trabalho é a cadeia, o arquivo de
+    // entrada é só onde ela apontava.
+    if (!imagem.empty() && !app.open(imagem, true)) {
+        resultado.missing_image = true;
+        resultado.wanted_image = imagem;
+        app.status.clear();
+    }
+
     app.chain = std::move(nova);
     app.pinned = fixado;
     app.chain_compact = compacto;
     app.colormap = mapa;
     app.viewed = 0;
-
-    // A imagem entra depois da cadeia: se ela sumiu, o trabalho continua de pé
-    // e é só religar noutro arquivo.
-    if (!imagem.empty() && !app.open(imagem)) {
-        resultado.missing_image = true;
-        resultado.wanted_image = imagem;
-        app.status.clear();
-    }
 
     if (vista >= 0 && vista < static_cast<int>(app.chain.stages.size())) {
         app.viewed = vista;

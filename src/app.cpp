@@ -2,7 +2,7 @@
 
 #include <utility>
 
-bool App::open(const std::string& file) {
+bool App::open(const std::string& file, bool keep_chain) {
     std::string error;
     Image loaded = load_image(file, error);
     if (loaded.empty()) {
@@ -17,9 +17,11 @@ bool App::open(const std::string& file) {
         source_bits = 0;
     }
     status.clear();
-    chain = Chain();
-    viewed = 0;
-    pinned = -1;
+    if (!keep_chain) {
+        chain = Chain();
+        viewed = 0;
+        pinned = -1;
+    }
     canvas.needs_fit = true;
     evaluate();
     return true;
