@@ -103,3 +103,9 @@ Map<float> color_gradient(ImageView image, Space space);
 
 // Distância até uma cor de referência, no espaço escolhido.
 Map<float> color_distance(ImageView image, Space space, const float reference[3]);
+
+// Fatia dos pixels que compartilham a faixa mais cheia. Equalização é função
+// de uma variável, então tudo que entra igual sai igual: com essa fatia alta,
+// ela não tem o que espalhar.
+float dominant_share(MapView<float> scalar);
+float dominant_share(ImageView image);

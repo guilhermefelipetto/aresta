@@ -199,10 +199,19 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
     }
     if (std::get_if<EqualizeOp>(&params)) {
         Value out = in[0]->clone();
+        const float fatia = out.kind == ValueKind::Scalar ? dominant_share(out.scalar.view())
+                                                         : dominant_share(out.color.view());
         if (out.kind == ValueKind::Scalar) {
             equalize(out.scalar.view());
         } else {
             equalize(out.color.view());
+        }
+        if (fatia > 0.25f) {
+            char aviso[128];
+            std::snprintf(aviso, sizeof(aviso),
+                          "%.0f%% dos pixels num valor só: a curva salta aí e eles saem juntos",
+                          fatia * 100.0f);
+            *note = aviso;
         }
         return out;
     }

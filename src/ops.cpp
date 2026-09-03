@@ -1032,3 +1032,29 @@ Map<float> color_distance(ImageView image, Space space, const float reference[3]
     });
     return out;
 }
+
+namespace {
+
+float share_of(const std::vector<float>& values) {
+    if (values.empty()) {
+        return 0.0f;
+    }
+    float lo = 0.0f;
+    float hi = 0.0f;
+    scan_range(values.size(), [&](std::size_t i) { return values[i]; }, &lo, &hi);
+    const float span = (hi > lo) ? (hi - lo) : 1.0f;
+
+    std::vector<int> counts(tone_bins, 0);
+    for (float v : values) {
+        ++counts[static_cast<std::size_t>(
+            std::clamp(static_cast<int>((v - lo) / span * tone_bins), 0, tone_bins - 1))];
+    }
+    const int pico = *std::max_element(counts.begin(), counts.end());
+    return static_cast<float>(pico) / static_cast<float>(values.size());
+}
+
+}  // namespace
+
+float dominant_share(MapView<float> scalar) { return share_of(values_of(scalar)); }
+
+float dominant_share(ImageView image) { return share_of(luma_of(image)); }
