@@ -115,6 +115,9 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] distância exata, reconstrução geodésica, esqueleto e hit-or-miss
 - [x] Canny, zero-crossings do LoG, limiar local e multi-Otsu
 - [x] Hough para retas e círculos, e watershed por marcadores
+- [x] redimensionar, girar, recortar, espelhar e quantizar, com interpolação
+- [x] convolução via FFT quando o kernel é grande
+- [ ] métricas de erro (PSNR, SSIM), descritores de região, wavelets
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
 - [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
 - [x] vizinhança por raio, morfologia e componentes conexas, com filtro por área

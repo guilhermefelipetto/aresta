@@ -59,6 +59,7 @@ add_executable(aresta
     src/export.cpp
     src/export_window.cpp
     src/fft.cpp
+    src/geometry.cpp
     src/histogram.cpp
     src/histogram_window.cpp
     src/image.cpp

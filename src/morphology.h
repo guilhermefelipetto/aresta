@@ -24,7 +24,12 @@ Map<int32_t> connected_components(MapView<int32_t> src, const Adjacency& adjacen
 //
 // Com `inside` ligado mede de dentro do objeto até o fundo; desligado mede do
 // fundo até o objeto.
-Map<float> distance_transform(MapView<int32_t> labels, bool inside);
+enum class Metric { Euclidean, CityBlock, Chessboard };
+
+const char* metric_name(Metric metric);
+
+Map<float> distance_transform(MapView<int32_t> labels, bool inside,
+                              Metric metric = Metric::Euclidean);
 
 // Dilatação geodésica repetida até parar de mudar: o marcador cresce mas nunca
 // escapa da máscara. É a peça de onde saem preenchimento de buraco e abertura

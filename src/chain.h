@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "convolve.h"
+#include "geometry.h"
 #include "fft.h"
 #include "regions.h"
 #include "restore.h"
@@ -48,7 +49,34 @@ struct MorphologyOp {
     Morph operation = Morph::Erode;
     float radius = 1.0f;
 };
-struct DistanceOp { bool inside = true; };
+struct DistanceOp {
+    bool inside = true;
+    Metric metric = Metric::Euclidean;
+};
+struct ResizeOp {
+    bool by_scale = true;
+    float scale = 0.5f;
+    int width = 512;
+    int height = 512;
+    Interp interp = Interp::Bilinear;
+};
+struct RotateOp {
+    float degrees = 15.0f;
+    Interp interp = Interp::Bilinear;
+    bool expand = true;
+};
+struct CropOp {
+    int x = 0;
+    int y = 0;
+    int width = 256;
+    int height = 256;
+};
+struct FlipOp {
+    bool horizontal = true;
+    bool vertical = false;
+    bool transpose = false;
+};
+struct QuantizeOp { int levels = 8; };
 struct CannyOp {
     float sigma = 1.2f;
     float low = 0.10f;
@@ -185,6 +213,7 @@ struct ConvolveOp {
     Border border = Border::Clamp;
     bool flip = false;
     bool normalize = false;
+    ConvPath path = ConvPath::Auto;
 };
 
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
@@ -196,7 +225,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ColorDistanceOp, PseudoColorOp, DistanceOp,
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
                               LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
-                              HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp>;
+                              HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp,
+                              ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

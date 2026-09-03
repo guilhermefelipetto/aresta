@@ -211,7 +211,65 @@ void distance_1d(const float* f, float* d, int n, int* v, float* z) {
 
 }  // namespace
 
-Map<float> distance_transform(MapView<int32_t> labels, bool inside) {
+const char* metric_name(Metric metric) {
+    switch (metric) {
+        case Metric::Euclidean: return "euclidiana";
+        case Metric::CityBlock: return "D4";
+        case Metric::Chessboard: return "D8";
+    }
+    return "?";
+}
+
+namespace {
+
+// D4 e D8 são exatas com duas varreduras de chanfro, porque os passos delas são
+// inteiros e a menor rota já é soma de passos.
+Map<float> chamfer(MapView<int32_t> labels, bool inside, Metric metric) {
+    Map<float> out(labels.width, labels.height);
+    const MapView<float> dst = out.view();
+    const float diagonal = metric == Metric::CityBlock ? infinito : 1.0f;
+
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            const bool semente = inside ? (labels.at(x, y) == 0) : (labels.at(x, y) != 0);
+            dst.at(x, y) = semente ? 0.0f : infinito;
+        }
+    }
+
+    const auto relaxa = [&](int x, int y, int dx, int dy, float peso) {
+        const int sx = x + dx;
+        const int sy = y + dy;
+        if (sx < 0 || sy < 0 || sx >= labels.width || sy >= labels.height) {
+            return;
+        }
+        dst.at(x, y) = std::min(dst.at(x, y), dst.at(sx, sy) + peso);
+    };
+
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            relaxa(x, y, -1, 0, 1.0f);
+            relaxa(x, y, 0, -1, 1.0f);
+            relaxa(x, y, -1, -1, diagonal);
+            relaxa(x, y, 1, -1, diagonal);
+        }
+    }
+    for (int y = labels.height - 1; y >= 0; --y) {
+        for (int x = labels.width - 1; x >= 0; --x) {
+            relaxa(x, y, 1, 0, 1.0f);
+            relaxa(x, y, 0, 1, 1.0f);
+            relaxa(x, y, 1, 1, diagonal);
+            relaxa(x, y, -1, 1, diagonal);
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+Map<float> distance_transform(MapView<int32_t> labels, bool inside, Metric metric) {
+    if (metric != Metric::Euclidean) {
+        return chamfer(labels, inside, metric);
+    }
     Map<float> out(labels.width, labels.height);
     const MapView<float> dst = out.view();
 

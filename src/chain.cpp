@@ -1,7 +1,9 @@
 #include "chain.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <type_traits>
 #include <utility>
 
@@ -290,7 +292,81 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return make_label(std::move(saida));
     }
     if (const auto* op = std::get_if<DistanceOp>(&params)) {
-        return make_scalar(distance_transform(in[0]->label.view(), op->inside));
+        return make_scalar(distance_transform(in[0]->label.view(), op->inside, op->metric));
+    }
+    if (const auto* op = std::get_if<ResizeOp>(&params)) {
+        const int w = op->by_scale
+                          ? std::max(1, static_cast<int>(std::lround(in[0]->width() * op->scale)))
+                          : std::max(1, op->width);
+        const int h = op->by_scale
+                          ? std::max(1, static_cast<int>(std::lround(in[0]->height() * op->scale)))
+                          : std::max(1, op->height);
+        const Affine mapa = affine_scale(static_cast<float>(w) / in[0]->width(),
+                                         static_cast<float>(h) / in[0]->height());
+        *note = std::to_string(w) + " x " + std::to_string(h);
+        switch (in[0]->kind) {
+            case ValueKind::Color:
+                return make_color(warp(in[0]->color.view(), w, h, mapa, op->interp));
+            case ValueKind::Scalar:
+                return make_scalar(warp(in[0]->scalar.view(), w, h, mapa, op->interp));
+            default:
+                return make_label(warp(in[0]->label.view(), w, h, mapa));
+        }
+    }
+    if (const auto* op = std::get_if<RotateOp>(&params)) {
+        const float w = static_cast<float>(in[0]->width());
+        const float h = static_cast<float>(in[0]->height());
+        int dw = in[0]->width();
+        int dh = in[0]->height();
+        if (op->expand) {
+            const float r = op->degrees * std::numbers::pi_v<float> / 180.0f;
+            const float c = std::fabs(std::cos(r));
+            const float s = std::fabs(std::sin(r));
+            dw = static_cast<int>(std::ceil(w * c + h * s));
+            dh = static_cast<int>(std::ceil(w * s + h * c));
+        }
+        const Affine mapa = affine_rotation(op->degrees, w * 0.5f, h * 0.5f, dw * 0.5f, dh * 0.5f);
+        *note = std::to_string(dw) + " x " + std::to_string(dh);
+        switch (in[0]->kind) {
+            case ValueKind::Color:
+                return make_color(warp(in[0]->color.view(), dw, dh, mapa, op->interp));
+            case ValueKind::Scalar:
+                return make_scalar(warp(in[0]->scalar.view(), dw, dh, mapa, op->interp));
+            default:
+                return make_label(warp(in[0]->label.view(), dw, dh, mapa));
+        }
+    }
+    if (const auto* op = std::get_if<CropOp>(&params)) {
+        switch (in[0]->kind) {
+            case ValueKind::Color:
+                return make_color(crop(in[0]->color.view(), op->x, op->y, op->width, op->height));
+            case ValueKind::Scalar:
+                return make_scalar(crop(in[0]->scalar.view(), op->x, op->y, op->width, op->height));
+            default:
+                return make_label(crop(in[0]->label.view(), op->x, op->y, op->width, op->height));
+        }
+    }
+    if (const auto* op = std::get_if<FlipOp>(&params)) {
+        switch (in[0]->kind) {
+            case ValueKind::Color:
+                return make_color(
+                    flip(in[0]->color.view(), op->horizontal, op->vertical, op->transpose));
+            case ValueKind::Scalar:
+                return make_scalar(
+                    flip(in[0]->scalar.view(), op->horizontal, op->vertical, op->transpose));
+            default:
+                return make_label(
+                    flip(in[0]->label.view(), op->horizontal, op->vertical, op->transpose));
+        }
+    }
+    if (const auto* op = std::get_if<QuantizeOp>(&params)) {
+        Value out = in[0]->clone();
+        if (out.kind == ValueKind::Scalar) {
+            quantize(out.scalar.view(), op->levels);
+        } else if (out.kind == ValueKind::Color) {
+            quantize(out.color.view(), op->levels);
+        }
+        return out;
     }
     if (const auto* op = std::get_if<ReconstructOp>(&params)) {
         return make_label(reconstruct(in[0]->label.view(), in[1]->label.view(),
@@ -320,10 +396,19 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         if (op->normalize) {
             kernel.normalize();
         }
+        bool pela_fft = false;
+        Value out;
         if (in[0]->kind == ValueKind::Scalar) {
-            return make_scalar(convolve(in[0]->scalar.view(), kernel, op->border, op->flip));
+            out = make_scalar(convolve(in[0]->scalar.view(), kernel, op->border, op->flip,
+                                       op->path, &pela_fft));
+        } else {
+            out = make_color(convolve(in[0]->color.view(), kernel, op->border, op->flip, op->path,
+                                      &pela_fft));
         }
-        return make_color(convolve(in[0]->color.view(), kernel, op->border, op->flip));
+        if (op->path == ConvPath::Auto) {
+            *note = pela_fft ? "pela frequência, que o kernel é grande" : "pelo caminho direto";
+        }
+        return out;
     }
     if (const auto* op = std::get_if<OverlayOp>(&params)) {
         Value out = in[0]->clone();
@@ -416,6 +501,17 @@ OpInfo op_info(const OpParams& params) {
                 return {"watershed", 3,
                         {ValueKind::Scalar, ValueKind::Label, ValueKind::Label},
                         ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, ResizeOp>) {
+                return {"redimensionar", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
+            } else if constexpr (std::is_same_v<T, RotateOp>) {
+                return {"girar", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
+            } else if constexpr (std::is_same_v<T, CropOp>) {
+                return {"recortar", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
+            } else if constexpr (std::is_same_v<T, FlipOp>) {
+                return {"espelhar", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
+            } else if constexpr (std::is_same_v<T, QuantizeOp>) {
+                return {"quantizar", 1, {ValueKind::Color}, ValueKind::Color,
+                        Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, DistanceOp>) {
                 return {"distância", 1, {ValueKind::Label}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ReconstructOp>) {
@@ -830,9 +926,28 @@ std::string stage_summary(const OpParams& params) {
     } else if (const auto* op = std::get_if<WatershedOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "raio %.2f%s", op->radius,
                       op->lines ? ", com divisores" : "");
+    } else if (const auto* op = std::get_if<ResizeOp>(&params)) {
+        if (op->by_scale) {
+            std::snprintf(buffer, sizeof(buffer), "fator %.3f, %s", op->scale,
+                          interp_name(op->interp));
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%d x %d, %s", op->width, op->height,
+                          interp_name(op->interp));
+        }
+    } else if (const auto* op = std::get_if<RotateOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%.1f graus, %s%s", op->degrees,
+                      interp_name(op->interp), op->expand ? ", com folga" : "");
+    } else if (const auto* op = std::get_if<CropOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d x %d a partir de (%d, %d)", op->width,
+                      op->height, op->x, op->y);
+    } else if (const auto* op = std::get_if<FlipOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s%s%s", op->horizontal ? "horizontal " : "",
+                      op->vertical ? "vertical " : "", op->transpose ? "transposta" : "");
+    } else if (const auto* op = std::get_if<QuantizeOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d níveis", op->levels);
     } else if (const auto* op = std::get_if<DistanceOp>(&params)) {
-        std::snprintf(buffer, sizeof(buffer), op->inside ? "de dentro até o fundo"
-                                                         : "do fundo até o objeto");
+        std::snprintf(buffer, sizeof(buffer), "%s, %s", metric_name(op->metric),
+                      op->inside ? "de dentro até o fundo" : "do fundo até o objeto");
     } else if (const auto* op = std::get_if<ThinOp>(&params)) {
         if (op->kind == Thin::Skeleton) {
             std::snprintf(buffer, sizeof(buffer), "esqueleto");

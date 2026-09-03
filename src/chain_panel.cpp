@@ -203,6 +203,12 @@ bool draw_operation_items(App& app) {
         {"Binário", "componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
         {"Binário", "distância", DistanceOp{}, "um estágio de rótulo"},
 
+        {"Geometria", "redimensionar", ResizeOp{}, "um estágio qualquer"},
+        {"Geometria", "girar", RotateOp{}, "um estágio qualquer"},
+        {"Geometria", "recortar", CropOp{}, "um estágio qualquer"},
+        {"Geometria", "espelhar", FlipOp{}, "um estágio qualquer"},
+        {"Geometria", "quantizar", QuantizeOp{}, "um estágio de cor ou escalar"},
+
         {nullptr, "combinar", CombineOp{}, "dois estágios do mesmo tipo"},
         {nullptr, "overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
         {nullptr, "ruído", NoiseOp{}, "um estágio de cor ou escalar"},
@@ -388,7 +394,15 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
 
             if (aberto) {
                 ImGui::SetNextItemWidth(-1.0f);
-                if (auto* op = std::get_if<ExposureOp>(&stage.params)) {
+                if (auto* op = std::get_if<ConvolveOp>(&stage.params)) {
+                    int caminho = static_cast<int>(op->path);
+                    if (ImGui::Combo("##p", &caminho,
+                                     "automático\0espacial\0frequência\0")) {
+                        op->path = static_cast<ConvPath>(caminho);
+                        dirty = true;
+                    }
+                    apoio("o kernel se edita em Ferramentas > Kernel");
+                } else if (auto* op = std::get_if<ExposureOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->stops, -3.0f, 3.0f, "%.2f EV");
                 } else if (auto* op = std::get_if<ContrastOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->amount, -0.9f, 2.0f, "%.2f");
@@ -637,7 +651,58 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     }
                 } else if (auto* op = std::get_if<MultiOtsuOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->classes, 2, 4, "%d classes");
+                } else if (auto* op = std::get_if<ResizeOp>(&stage.params)) {
+                    int modo = op->by_scale ? 0 : 1;
+                    if (ImGui::Combo("##p", &modo, "por fator\0por tamanho\0")) {
+                        op->by_scale = modo == 0;
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    if (op->by_scale) {
+                        dirty |= ImGui::SliderFloat("##f", &op->scale, 0.05f, 8.0f, "fator %.3f",
+                                                    ImGuiSliderFlags_Logarithmic);
+                    } else {
+                        dirty |= ImGui::DragInt("##w", &op->width, 1.0f, 1, 16384, "%d de largura");
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::DragInt("##h", &op->height, 1.0f, 1, 16384, "%d de altura");
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    int interp = static_cast<int>(op->interp);
+                    if (ImGui::Combo("##i", &interp, "vizinho\0bilinear\0bicúbica\0")) {
+                        op->interp = static_cast<Interp>(interp);
+                        dirty = true;
+                    }
+                } else if (auto* op = std::get_if<RotateOp>(&stage.params)) {
+                    dirty |= ImGui::DragFloat("##p", &op->degrees, 0.2f, -360.0f, 360.0f,
+                                              "%.1f graus");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    int interp = static_cast<int>(op->interp);
+                    if (ImGui::Combo("##i", &interp, "vizinho\0bilinear\0bicúbica\0")) {
+                        op->interp = static_cast<Interp>(interp);
+                        dirty = true;
+                    }
+                    dirty |= ImGui::Checkbox("crescer pra caber", &op->expand);
+                } else if (auto* op = std::get_if<CropOp>(&stage.params)) {
+                    dirty |= ImGui::DragInt("##x", &op->x, 1.0f, 0, 16384, "x %d");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragInt("##y", &op->y, 1.0f, 0, 16384, "y %d");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragInt("##w", &op->width, 1.0f, 1, 16384, "%d de largura");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragInt("##h", &op->height, 1.0f, 1, 16384, "%d de altura");
+                } else if (auto* op = std::get_if<FlipOp>(&stage.params)) {
+                    dirty |= ImGui::Checkbox("horizontal", &op->horizontal);
+                    dirty |= ImGui::Checkbox("vertical", &op->vertical);
+                    dirty |= ImGui::Checkbox("transpor", &op->transpose);
+                } else if (auto* op = std::get_if<QuantizeOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->levels, 2, 256, "%d níveis",
+                                              ImGuiSliderFlags_Logarithmic);
                 } else if (auto* op = std::get_if<DistanceOp>(&stage.params)) {
+                    int metric = static_cast<int>(op->metric);
+                    if (ImGui::Combo("##p", &metric, "euclidiana\0D4\0D8\0")) {
+                        op->metric = static_cast<Metric>(metric);
+                        dirty = true;
+                    }
                     dirty |= ImGui::Checkbox("medir de dentro", &op->inside);
                 } else if (auto* op = std::get_if<FillHolesOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 3.0f, "raio %.2f");
