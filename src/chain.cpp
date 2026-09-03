@@ -412,8 +412,9 @@ bool Chain::can_add(const OpParams& params) const {
     return true;
 }
 
-void Chain::wire_inputs(const OpInfo& info, int prefer_id, int limit,
+void Chain::wire_inputs(const OpParams& params_of_info, int prefer_id, int limit,
                         std::vector<int>* inputs) const {
+    const OpInfo info = op_info(params_of_info);
     inputs->assign(static_cast<std::size_t>(info.input_count), -1);
     if (info.input_count <= 0) {
         return;
@@ -429,6 +430,27 @@ void Chain::wire_inputs(const OpInfo& info, int prefer_id, int limit,
             (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id, limit);
         }
         return;
+    }
+
+    // Compor sabe o que quer: se existirem canais do mesmo espaço, cada slot
+    // pega o seu, em vez de sair chutando pela ordem da lista.
+    if (const auto* compor = std::get_if<ComposeOp>(&params_of_info)) {
+        bool achou_todos = true;
+        std::vector<int> escolhidos(3, -1);
+        for (int k = 0; k < 3 && achou_todos; ++k) {
+            for (int i = limit - 1; i >= 0; --i) {
+                const auto* canal = std::get_if<ChannelOp>(&stages[static_cast<std::size_t>(i)].params);
+                if (canal && canal->space == compor->space && canal->component == k) {
+                    escolhidos[static_cast<std::size_t>(k)] = stages[static_cast<std::size_t>(i)].id;
+                    break;
+                }
+            }
+            achou_todos = escolhidos[static_cast<std::size_t>(k)] >= 0;
+        }
+        if (achou_todos) {
+            *inputs = escolhidos;
+            return;
+        }
     }
 
     std::vector<int> candidatos;
@@ -460,7 +482,7 @@ int Chain::add(OpParams params, int prefer_id, int position) {
     Stage stage;
     stage.id = next_id++;
     stage.params = std::move(params);
-    wire_inputs(op_info(stage.params), prefer_id, limit, &stage.inputs);
+    wire_inputs(stage.params, prefer_id, limit, &stage.inputs);
 
     const int id = stage.id;
     stages.insert(stages.begin() + limit, std::move(stage));
@@ -591,6 +613,22 @@ bool bridge_for(const Chain& chain, const OpParams& params, OpParams* bridge) {
         }
     }
     return false;
+}
+
+const char* input_label(const OpParams& params, int k) {
+    if (const auto* op = std::get_if<ComposeOp>(&params)) {
+        return component_name(op->space, k);
+    }
+    if (std::get_if<OverlayOp>(&params)) {
+        return k == 0 ? "cor" : "rótulos";
+    }
+    if (std::get_if<MatchOp>(&params)) {
+        return k == 0 ? "origem" : "alvo";
+    }
+    if (std::get_if<CombineOp>(&params)) {
+        return k == 0 ? "a" : "b";
+    }
+    return "entrada";
 }
 
 std::string stage_summary(const OpParams& params) {

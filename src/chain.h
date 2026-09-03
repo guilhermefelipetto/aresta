@@ -167,6 +167,10 @@ bool poly_accepts(Poly poly, ValueKind kind);
 // Com três convoluções empilhadas, "convolução" três vezes não ajuda ninguém.
 std::string stage_summary(const OpParams& params);
 
+// Nome do slot k. "entrada" não diz nada quando a operação tem três delas e a
+// ordem importa.
+const char* input_label(const OpParams& params, int k);
+
 struct Chain;
 
 // Quando falta o tipo intermediário, diz qual operação resolveria em um passo
@@ -212,7 +216,7 @@ struct Chain {
 
     // Quando a operação tem várias entradas do mesmo tipo, ligar as três no
     // mesmo estágio nunca é o que a pessoa queria. Espalha pelos últimos.
-    void wire_inputs(const OpInfo& info, int prefer_id, int limit,
+    void wire_inputs(const OpParams& params, int prefer_id, int limit,
                      std::vector<int>* inputs) const;
     bool can_add(const OpParams& params) const;
 
