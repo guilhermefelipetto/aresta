@@ -10,6 +10,7 @@
 
 #include "app.h"
 #include "expr.h"
+#include "fft.h"
 
 namespace {
 
@@ -71,6 +72,56 @@ void run_generator(KernelWindow& window) {
             window.kernel.fill(window.constant);
             break;
     }
+}
+
+constexpr int response_size = 64;
+
+// |FFT(kernel)| com a origem no centro. O kernel entra numa grade de 64x64 com
+// a âncora em (0,0) e enrolamento, que é onde a transformada espera achar ela.
+void draw_response(const Kernel& kernel, float side) {
+    Map<float> grade(response_size, response_size);
+    grade.fill(0.0f);
+    for (int y = 0; y < kernel.height; ++y) {
+        for (int x = 0; x < kernel.width; ++x) {
+            const int gx = ((x - kernel.anchor_x()) % response_size + response_size) %
+                           response_size;
+            const int gy = ((y - kernel.anchor_y()) % response_size + response_size) %
+                           response_size;
+            grade.view().at(gx, gy) = kernel.at(x, y);
+        }
+    }
+
+    const Spectrum spectrum = forward_fft(grade.view(), Pad::Zero);
+    const Map<float> magnitude = spectrum_magnitude(spectrum, false);
+
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < magnitude.count(); ++i) {
+        peak = std::max(peak, magnitude.data[i]);
+    }
+    if (peak <= 0.0f) {
+        peak = 1.0f;
+    }
+
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(side, side));
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    const float cell = side / response_size;
+
+    for (int y = 0; y < response_size; ++y) {
+        for (int x = 0; x < response_size; ++x) {
+            const float t = std::clamp(magnitude.view().at(x, y) / peak, 0.0f, 1.0f);
+            const auto level = static_cast<unsigned char>(t * 255.0f);
+            draw->AddRectFilled(ImVec2(origin.x + x * cell, origin.y + y * cell),
+                                ImVec2(origin.x + (x + 1) * cell, origin.y + (y + 1) * cell),
+                                IM_COL32(level, level, level, 255));
+        }
+    }
+    const float half = side * 0.5f;
+    draw->AddLine(ImVec2(origin.x + half, origin.y), ImVec2(origin.x + half, origin.y + side),
+                  IM_COL32(80, 130, 200, 90));
+    draw->AddLine(ImVec2(origin.x, origin.y + half), ImVec2(origin.x + side, origin.y + half),
+                  IM_COL32(80, 130, 200, 90));
+    draw->AddRect(origin, ImVec2(origin.x + side, origin.y + side), IM_COL32(60, 60, 68, 255));
 }
 
 ConvolveOp current_op(const KernelWindow& window) {
@@ -280,6 +331,13 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
                     window.message = std::string("Salvo como ") + window.save_name + ".";
                 }
             }
+        }
+
+        if (ImGui::CollapsingHeader("Resposta em frequência", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const float side = std::min(ImGui::GetContentRegionAvail().x - 4.0f, 200.0f);
+            draw_response(window.kernel, side);
+            ImGui::TextDisabled("centro é a média, borda é o detalhe fino;");
+            ImGui::TextDisabled("claro é o que passa.");
         }
 
         if (ImGui::CollapsingHeader("Gerador", ImGuiTreeNodeFlags_DefaultOpen)) {

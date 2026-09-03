@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "convolve.h"
+#include "fft.h"
 #include "ops.h"
 #include "kernel.h"
 #include "morphology.h"
@@ -40,6 +41,18 @@ struct RankOp {
     float alpha = 0.4f;
 };
 struct MatchOp {};
+struct SpectrumOp {
+    Pad pad = Pad::Mirror;
+    bool logarithmic = true;
+};
+struct FreqFilterOp {
+    FreqShape shape = FreqShape::Gaussian;
+    FreqKind kind = FreqKind::LowPass;
+    float cutoff = 0.15f;
+    int order = 2;
+    float width = 0.08f;
+    Pad pad = Pad::Mirror;
+};
 struct BitPlaneOp { int plane = 7; };
 struct ComposeOp {};
 struct CurveOp {
@@ -67,7 +80,8 @@ struct ConvolveOp {
 using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertOp, ChannelOp,
                               ThresholdOp, OverlayOp, ConvolveOp, MorphologyOp, ComponentsOp,
                               EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp,
-                              RankOp, MatchOp, BitPlaneOp, ComposeOp>;
+                              RankOp, MatchOp, BitPlaneOp, ComposeOp, SpectrumOp,
+                              FreqFilterOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

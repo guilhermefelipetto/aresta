@@ -48,6 +48,25 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return out;
     }
+    if (const auto* op = std::get_if<SpectrumOp>(&params)) {
+        const Map<float> plano = in[0]->kind == ValueKind::Scalar
+                                     ? Map<float>{}
+                                     : in[0]->color.luma();
+        const MapView<float> fonte =
+            in[0]->kind == ValueKind::Scalar ? in[0]->scalar.view() : plano.view();
+        const Spectrum spectrum = forward_fft(fonte, op->pad);
+        *note = std::to_string(spectrum.width) + "x" + std::to_string(spectrum.height) +
+                " depois do preenchimento";
+        return make_scalar(spectrum_magnitude(spectrum, op->logarithmic));
+    }
+    if (const auto* op = std::get_if<FreqFilterOp>(&params)) {
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(filter_frequency(in[0]->scalar.view(), op->shape, op->kind,
+                                                op->cutoff, op->order, op->width, op->pad));
+        }
+        return make_color(filter_frequency(in[0]->color.view(), op->shape, op->kind, op->cutoff,
+                                           op->order, op->width, op->pad));
+    }
     if (const auto* op = std::get_if<BitPlaneOp>(&params)) {
         if (in[0]->kind == ValueKind::Scalar) {
             return make_scalar(bit_plane(in[0]->scalar.view(), op->plane));
@@ -219,6 +238,12 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, MatchOp>) {
                 return {"casar histograma", 2, {ValueKind::Color, ValueKind::Color},
                         ValueKind::Color, Poly::PairTone};
+            } else if constexpr (std::is_same_v<T, SpectrumOp>) {
+                return {"espectro", 1, {ValueKind::Color}, ValueKind::Scalar,
+                        Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, FreqFilterOp>) {
+                return {"filtro de frequência", 1, {ValueKind::Color}, ValueKind::Color,
+                        Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, BitPlaneOp>) {
                 return {"plano de bit", 1, {ValueKind::Color}, ValueKind::Scalar,
                         Poly::ColorOrScalar};
@@ -468,6 +493,18 @@ std::string stage_summary(const OpParams& params) {
         } else {
             std::snprintf(buffer, sizeof(buffer), "%s, raio %.2f", rank_name(op->kind),
                           op->radius);
+        }
+    } else if (const auto* op = std::get_if<SpectrumOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s%s", pad_name(op->pad),
+                      op->logarithmic ? ", log" : "");
+    } else if (const auto* op = std::get_if<FreqFilterOp>(&params)) {
+        if (op->kind == FreqKind::BandPass || op->kind == FreqKind::BandReject) {
+            std::snprintf(buffer, sizeof(buffer), "%s %s, corte %.3f, largura %.3f",
+                          freq_shape_name(op->shape), freq_kind_name(op->kind), op->cutoff,
+                          op->width);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "%s %s, corte %.3f", freq_shape_name(op->shape),
+                          freq_kind_name(op->kind), op->cutoff);
         }
     } else if (const auto* op = std::get_if<BitPlaneOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "bit %d", op->plane);

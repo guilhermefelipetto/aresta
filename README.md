@@ -42,8 +42,10 @@ gaussianas, gabor, disco, borrado de movimento) ou preencher por fórmula, onde
 `a`, `b`, `c` ficam amarrados em sliders. `gauss(r, a)` reconstrói a gaussiana,
 `r <= a` dá um disco.
 
-A janela mostra a soma dos coeficientes e se a matriz é separável, que é a
-diferença entre `w*h` e `w+h` multiplicações por pixel. Aplicar não mexe na
+A janela mostra a soma dos coeficientes, se a matriz é separável (a diferença
+entre `w*h` e `w+h` multiplicações por pixel) e a **resposta em frequência** do
+kernel, ao vivo. Gaussiana acende o centro e apaga a borda; laplaciano faz o
+contrário. Aplicar não mexe na
 imagem: acrescenta um estágio de convolução na cadeia.
 
 O caminho de volta também existe: o botão `editar` na linha do estágio liga a
@@ -106,6 +108,7 @@ pra desenhar, stb_image pra ler arquivo. CMake e Ninja no build.
 - [x] cadeia de operações tipada, com a saída de cada estágio inspecionável
 - [x] convolução, com editor de kernel, geradores e fórmula
 - [x] filtros de ordem, casamento de histograma, planos de bit
+- [x] FFT 2D, espectro centralizado e filtros no domínio da frequência
 - [x] transformação de intensidade por fórmula, com o gráfico da curva
 - [x] aritmética entre estágios, fios da cadeia desenhados, e exibição fixável
 - [x] vizinhança por raio, morfologia e componentes conexas

@@ -113,6 +113,9 @@ bool draw_operation_items(App& app) {
         {"casar histograma", MatchOp{}, "dois estágios de cor ou escalar"},
         {"ordem", RankOp{}, "um estágio de cor ou escalar"},
         {"plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
+        {nullptr, SourceOp{}, nullptr},
+        {"espectro", SpectrumOp{}, "um estágio de cor ou escalar"},
+        {"filtro de frequência", FreqFilterOp{}, "um estágio de cor ou escalar"},
         {"compor", ComposeOp{}, "três estágios escalares"},
         {"alongar", StretchOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
@@ -375,6 +378,38 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                         ImGui::SetNextItemWidth(-1.0f);
                         dirty |= ImGui::SliderFloat("##alfa", &op->alpha, 0.0f, 0.9f,
                                                     "corta %.0f%%");
+                    }
+                } else if (auto* op = std::get_if<SpectrumOp>(&stage.params)) {
+                    int pad = static_cast<int>(op->pad);
+                    if (ImGui::Combo("##p", &pad, "espelhar\0zero\0")) {
+                        op->pad = static_cast<Pad>(pad);
+                        dirty = true;
+                    }
+                    dirty |= ImGui::Checkbox("escala log", &op->logarithmic);
+                } else if (auto* op = std::get_if<FreqFilterOp>(&stage.params)) {
+                    int shape = static_cast<int>(op->shape);
+                    if (ImGui::Combo("##p", &shape, "ideal\0Butterworth\0gaussiano\0")) {
+                        op->shape = static_cast<FreqShape>(shape);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##k", &kind,
+                                     "passa-baixa\0passa-alta\0passa-faixa\0rejeita-faixa\0")) {
+                        op->kind = static_cast<FreqKind>(kind);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##corte", &op->cutoff, 0.005f, 1.0f,
+                                                "corte %.3f", ImGuiSliderFlags_Logarithmic);
+                    if (op->shape == FreqShape::Butterworth) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderInt("##ordem", &op->order, 1, 8, "ordem %d");
+                    }
+                    if (op->kind == FreqKind::BandPass || op->kind == FreqKind::BandReject) {
+                        ImGui::SetNextItemWidth(-1.0f);
+                        dirty |= ImGui::SliderFloat("##larg", &op->width, 0.005f, 0.5f,
+                                                    "largura %.3f", ImGuiSliderFlags_Logarithmic);
                     }
                 } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
