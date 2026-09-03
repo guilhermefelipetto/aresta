@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "canvas.h"
 #include "chain.h"
@@ -38,8 +40,20 @@ struct App {
     std::string path;
     std::string status;
 
+    // Onde esse documento foi salvo, e o texto do projeto na última vez que
+    // ele bateu com o disco. Comparar com o atual é o que diz se tem coisa não
+    // salva, sem ninguém precisar marcar sujo na mão.
+    std::string project_path;
+    std::string saved_state;
+    bool unsaved = false;
+    long long last_signature = -1;
+
     int source_channels = 0;
     int source_bits = 0;
+
+    // Nome curto pra aba e pro título: o do projeto quando tem, senão o da
+    // imagem.
+    std::string label() const;
 
     // Índice do que está na tela: o fixado quando existe, senão o selecionado.
     int shown() const;
@@ -50,4 +64,24 @@ struct App {
     bool open(const std::string& file, bool keep_chain = false);
     void evaluate();
     void upload_view();
+};
+
+// Vários documentos abertos ao mesmo tempo, cada um com sua imagem, sua cadeia
+// e seu projeto. As janelas de ferramenta continuam recebendo um App só: elas
+// trabalham sempre no documento ativo.
+struct Workspace {
+    std::vector<std::unique_ptr<App>> docs;
+    int active = 0;
+
+    Workspace();
+
+    App& doc();
+    const App& doc() const;
+
+    // Documento recém-aberto e intocado é lugar bom pra colocar o próximo
+    // arquivo, em vez de deixar aba vazia pra trás.
+    bool doc_is_pristine() const;
+
+    App& open_tab();
+    void close_tab(int index);
 };

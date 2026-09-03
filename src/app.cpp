@@ -1,5 +1,8 @@
 #include "app.h"
 
+#include <algorithm>
+#include <filesystem>
+#include <memory>
 #include <utility>
 
 bool App::open(const std::string& file, bool keep_chain) {
@@ -58,4 +61,53 @@ void App::upload_view() {
     }
     upload_rgba8(texture, to_display_rgba8(value, colormap, &view_lo, &view_hi).get(),
                  value.width(), value.height());
+}
+
+std::string App::label() const {
+    if (!project_path.empty()) {
+        return std::filesystem::path(project_path).filename().string();
+    }
+    if (!path.empty()) {
+        return std::filesystem::path(path).filename().string();
+    }
+    return "sem título";
+}
+
+Workspace::Workspace() { docs.push_back(std::make_unique<App>()); }
+
+App& Workspace::doc() {
+    active = std::clamp(active, 0, static_cast<int>(docs.size()) - 1);
+    return *docs[active];
+}
+
+const App& Workspace::doc() const {
+    const int i = std::clamp(active, 0, static_cast<int>(docs.size()) - 1);
+    return *docs[i];
+}
+
+bool Workspace::doc_is_pristine() const {
+    const App& d = doc();
+    return d.source.empty() && d.chain.stages.size() <= 1 && d.project_path.empty();
+}
+
+App& Workspace::open_tab() {
+    if (doc_is_pristine()) {
+        return doc();
+    }
+    docs.push_back(std::make_unique<App>());
+    active = static_cast<int>(docs.size()) - 1;
+    return *docs.back();
+}
+
+void Workspace::close_tab(int index) {
+    if (index < 0 || index >= static_cast<int>(docs.size())) {
+        return;
+    }
+    docs.erase(docs.begin() + index);
+    if (docs.empty()) {
+        docs.push_back(std::make_unique<App>());
+    }
+    if (active >= static_cast<int>(docs.size())) {
+        active = static_cast<int>(docs.size()) - 1;
+    }
 }

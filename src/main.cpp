@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     // arrastou da última vez.
     bool layout_pending = !std::filesystem::exists(ini);
 
-    App app;
+    Workspace ws;
     KernelLibrary kernel_library;
     kernel_library.load();
     KernelWindow kernel_window;
@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
     ExportWindow export_window;
 
     bool chain_dirty = false;
-    std::string project_path;
+    int fechar_aba = -1;
+    int fechar_confirmado = -1;
     char project_input[1024] = {};
     char attach_input[1024] = {};
     std::string missing_image;
@@ -102,76 +103,92 @@ int main(int argc, char** argv) {
                      "*.pgm", "*.ppm", "*.pnm"}}};
     const std::vector<FileFilter> filtro_projeto = {{"Projeto do aresta", {"*.aresta"}}};
 
-    // Texto do projeto na última vez que ele bateu com o disco. Comparar com o
-    // atual é o que diz se tem coisa não salva.
-    std::string saved_state;
-    bool unsaved = false;
-    long long last_signature = -1;
-
     auto set_title = [&] {
-        std::string titulo = "aresta";
-        if (!project_path.empty()) {
-            titulo = std::filesystem::path(project_path).filename().string() + " - aresta";
-        } else if (!app.path.empty()) {
-            titulo = std::filesystem::path(app.path).filename().string() + " - aresta";
-        }
-        if (unsaved) {
+        const App& d = ws.doc();
+        std::string titulo = d.label() + " - aresta";
+        if (d.unsaved) {
             titulo += "*";
         }
         SDL_SetWindowTitle(window, titulo.c_str());
     };
 
     auto mark_saved = [&] {
-        saved_state = project_text(app);
-        unsaved = false;
+        App& d = ws.doc();
+        d.saved_state = project_text(d);
+        d.unsaved = false;
         set_title();
     };
 
-    auto open_path = [&](const std::string& file) {
-        if (!app.open(file)) {
+    // Janela de ferramenta guarda o id do estágio que está dirigindo, e id de
+    // outro documento apontaria pra cadeia errada. Trocar de aba solta todas.
+    auto detach_tools = [&] {
+        kernel_window.editing = -1;
+        curve_window.editing = -1;
+        components_window.editing = -1;
+        histogram_window.seen_revision = -1;
+        components_window.seen_revision = -1;
+    };
+
+    auto open_path = [&](const std::string& file, bool nova_aba) {
+        App& d = nova_aba ? ws.open_tab() : ws.doc();
+        if (!d.open(file)) {
             return false;
         }
-        project_path.clear();
+        d.project_path.clear();
+        detach_tools();
         mark_saved();
         return true;
     };
 
     auto swap_image = [&](const std::string& file) {
-        if (!app.open(file, true)) {
+        App& d = ws.doc();
+        if (!d.open(file, true)) {
             return false;
         }
-        app.evaluate();
-        app.upload_view();
+        d.evaluate();
+        d.upload_view();
         set_title();
-        app.status = "Imagem trocada, cadeia mantida.";
+        d.status = "Imagem trocada, cadeia mantida.";
         return true;
     };
 
-    auto open_project = [&](const std::string& file) {
-        const ProjectLoad r = load_project(app, file);
+    auto open_project = [&](const std::string& file, bool nova_aba) {
+        App& d = nova_aba ? ws.open_tab() : ws.doc();
+        const ProjectLoad r = load_project(d, file);
         if (!r.ok) {
-            app.status = r.error;
+            d.status = r.error;
             return false;
         }
-        project_path = file;
+        d.project_path = file;
         chain_dirty = false;
         missing_image = r.missing_image ? r.wanted_image : std::string();
         std::snprintf(attach_input, sizeof(attach_input), "%s", r.wanted_image.c_str());
+        detach_tools();
         mark_saved();
-        app.status = r.missing_image ? std::string() : "Projeto carregado.";
+        d.status = r.missing_image ? std::string() : "Projeto carregado.";
         return true;
     };
 
     auto save_project_to = [&](const std::string& file) {
+        App& d = ws.doc();
         std::string erro;
-        if (!save_project(app, file, &erro)) {
-            app.status = erro;
+        if (!save_project(d, file, &erro)) {
+            d.status = erro;
             return false;
         }
-        project_path = file;
+        d.project_path = file;
         mark_saved();
-        app.status = "Projeto salvo em " + file;
+        d.status = "Projeto salvo em " + file;
         return true;
+    };
+
+    // Abrir arquivo solto: projeto ou imagem, decidido pelo sufixo.
+    auto open_any = [&](const std::string& file, bool nova_aba) {
+        const std::size_t n = std::strlen(project_suffix());
+        const bool eh_projeto =
+            file.size() > n
+            && file.compare(file.size() - n, std::string::npos, project_suffix()) == 0;
+        return eh_projeto ? open_project(file, nova_aba) : open_path(file, nova_aba);
     };
 
     if (argc > 1) {
@@ -181,14 +198,14 @@ int main(int argc, char** argv) {
             && arg.compare(arg.size() - std::strlen(project_suffix()),
                            std::string::npos, project_suffix()) == 0;
         if (eh_projeto) {
-            open_project(arg);
+            open_project(arg, true);
             // ./aresta projeto.aresta outra.png roda a mesma cadeia noutra
             // imagem, sem precisar salvar um projeto novo pra isso.
             if (argc > 2 && swap_image(argv[2])) {
                 missing_image.clear();
             }
         } else {
-            open_path(arg);
+            open_path(arg, true);
         }
     }
 
@@ -205,6 +222,13 @@ int main(int argc, char** argv) {
     bool rodando = true;
 
     while (rodando) {
+        if (fechar_confirmado >= 0) {
+            ws.close_tab(fechar_confirmado);
+            fechar_confirmado = -1;
+            detach_tools();
+            set_title();
+        }
+
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             ImGui_ImplSDL2_ProcessEvent(&ev);
@@ -216,17 +240,12 @@ int main(int argc, char** argv) {
                 rodando = false;
             }
             if (ev.type == SDL_DROPFILE) {
-                const std::string solto = ev.drop.file;
-                const std::size_t n = std::strlen(project_suffix());
-                if (solto.size() > n
-                    && solto.compare(solto.size() - n, std::string::npos, project_suffix()) == 0) {
-                    open_project(solto);
-                } else {
-                    open_path(solto);
-                }
+                open_any(ev.drop.file, true);
                 SDL_free(ev.drop.file);
             }
         }
+
+        App& app = ws.doc();
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL2_NewFrame();
@@ -244,10 +263,10 @@ int main(int argc, char** argv) {
                 rodando = false;
             }
             if (ImGui::IsKeyPressed(ImGuiKey_S)) {
-                if (io.KeyShift || project_path.empty()) {
+                if (io.KeyShift || app.project_path.empty()) {
                     save_as_requested = true;
                 } else {
-                    save_project_to(project_path);
+                    save_project_to(app.project_path);
                 }
             }
         }
@@ -265,10 +284,10 @@ int main(int argc, char** argv) {
                     open_project_requested = true;
                 }
                 if (ImGui::MenuItem("Salvar projeto", "Ctrl+S")) {
-                    if (project_path.empty()) {
+                    if (app.project_path.empty()) {
                         save_as_requested = true;
                     } else {
-                        save_project_to(project_path);
+                        save_project_to(app.project_path);
                     }
                 }
                 if (ImGui::MenuItem("Salvar projeto como...", "Ctrl+Shift+S")) {
@@ -354,7 +373,7 @@ int main(int argc, char** argv) {
             const PickResult r =
                 pick_open_file("Abrir imagem", app.path, filtro_imagem, &escolhido);
             if (r == PickResult::Chose) {
-                open_path(escolhido);
+                open_path(escolhido, true);
             } else if (r == PickResult::Unavailable) {
                 ImGui::OpenPopup("Abrir imagem");
             }
@@ -365,7 +384,7 @@ int main(int argc, char** argv) {
             const bool submitted = ImGui::InputText("##caminho", path_input, sizeof(path_input),
                                                     ImGuiInputTextFlags_EnterReturnsTrue);
             if (ImGui::Button("Abrir") || submitted) {
-                if (open_path(path_input)) {
+                if (open_path(path_input, true)) {
                     ImGui::CloseCurrentPopup();
                 }
             }
@@ -384,11 +403,11 @@ int main(int argc, char** argv) {
             open_project_requested = false;
             std::string escolhido;
             const PickResult r =
-                pick_open_file("Abrir projeto", project_path, filtro_projeto, &escolhido);
+                pick_open_file("Abrir projeto", app.project_path, filtro_projeto, &escolhido);
             if (r == PickResult::Chose) {
-                open_project(escolhido);
+                open_project(escolhido, true);
             } else if (r == PickResult::Unavailable) {
-                std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
+                std::snprintf(project_input, sizeof(project_input), "%s", app.project_path.c_str());
                 ImGui::OpenPopup("Abrir projeto");
             }
         }
@@ -398,7 +417,7 @@ int main(int argc, char** argv) {
             const bool enviou = ImGui::InputText("##projeto", project_input, sizeof(project_input),
                                                  ImGuiInputTextFlags_EnterReturnsTrue);
             if (ImGui::Button("Abrir") || enviou) {
-                if (open_project(project_input)) {
+                if (open_project(project_input, true)) {
                     ImGui::CloseCurrentPopup();
                 }
             }
@@ -414,7 +433,7 @@ int main(int argc, char** argv) {
         }
 
         if (save_as_requested) {
-            if (project_path.empty()) {
+            if (app.project_path.empty()) {
                 // Sem projeto ainda: propõe o nome da imagem, na pasta dela.
                 std::filesystem::path sugestao =
                     app.path.empty() ? std::filesystem::path("projeto")
@@ -422,7 +441,7 @@ int main(int argc, char** argv) {
                 sugestao += project_suffix();
                 std::snprintf(project_input, sizeof(project_input), "%s", sugestao.c_str());
             } else {
-                std::snprintf(project_input, sizeof(project_input), "%s", project_path.c_str());
+                std::snprintf(project_input, sizeof(project_input), "%s", app.project_path.c_str());
             }
             save_as_requested = false;
             std::string escolhido;
@@ -625,9 +644,64 @@ int main(int argc, char** argv) {
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
         ImGui::Begin("Imagem");
+        if (ws.docs.size() > 1 || !ws.doc().path.empty()) {
+            if (ImGui::BeginTabBar("abas", ImGuiTabBarFlags_AutoSelectNewTabs
+                                               | ImGuiTabBarFlags_Reorderable
+                                               | ImGuiTabBarFlags_FittingPolicyScroll)) {
+                for (int i = 0; i < static_cast<int>(ws.docs.size()); ++i) {
+                    App& d = *ws.docs[i];
+                    std::string nome = d.label();
+                    if (d.unsaved) {
+                        nome += "*";
+                    }
+                    // Id separado do rótulo, senão dois arquivos de mesmo nome
+                    // viram a mesma aba.
+                    nome += "###aba" + std::to_string(i);
+
+                    bool viva = true;
+                    if (ImGui::BeginTabItem(nome.c_str(), &viva)) {
+                        if (ws.active != i) {
+                            ws.active = i;
+                            detach_tools();
+                            set_title();
+                        }
+                        ImGui::EndTabItem();
+                    }
+                    if (!viva) {
+                        fechar_aba = i;
+                    }
+                }
+                ImGui::EndTabBar();
+            }
+        }
         draw_canvas(app.canvas, app.texture);
         ImGui::End();
         ImGui::PopStyleVar();
+
+        if (fechar_aba >= 0 && !ImGui::IsPopupOpen("Fechar sem salvar")) {
+            if (ws.docs[fechar_aba]->unsaved) {
+                ImGui::OpenPopup("Fechar sem salvar");
+            } else {
+                fechar_confirmado = fechar_aba;
+                fechar_aba = -1;
+            }
+        }
+        if (fechar_aba >= 0
+            && ImGui::BeginPopupModal("Fechar sem salvar", nullptr,
+                                      ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("%s tem alteração não salva.", ws.docs[fechar_aba]->label().c_str());
+            if (ImGui::Button("Fechar mesmo assim")) {
+                fechar_confirmado = fechar_aba;
+                fechar_aba = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancelar")) {
+                fechar_aba = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
 
         draw_kernel_window(kernel_window, kernel_library, app);
         draw_histogram_window(histogram_window, app);
@@ -642,11 +716,11 @@ int main(int argc, char** argv) {
             const long long assinatura =
                 app.revision * 1000003LL + app.viewed * 1009LL + app.pinned * 101LL
                 + static_cast<int>(app.colormap) * 7LL + (app.chain_compact ? 1LL : 0LL);
-            if (assinatura != last_signature) {
-                last_signature = assinatura;
-                const bool agora = project_text(app) != saved_state;
-                if (agora != unsaved) {
-                    unsaved = agora;
+            if (assinatura != app.last_signature) {
+                app.last_signature = assinatura;
+                const bool agora = project_text(app) != app.saved_state;
+                if (agora != app.unsaved) {
+                    app.unsaved = agora;
                     set_title();
                 }
             }
