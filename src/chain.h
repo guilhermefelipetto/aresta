@@ -65,6 +65,28 @@ struct AdaptiveThresholdOp {
     float k = 0.2f;
 };
 struct MultiOtsuOp { int classes = 3; };
+struct HoughAccumulatorOp {
+    int thetas = 360;
+    int rhos = 360;
+};
+struct HoughLinesOp {
+    int thetas = 360;
+    int rhos = 360;
+    float threshold = 0.45f;
+    int max_lines = 10;
+};
+struct HoughCirclesOp {
+    float min_radius = 10.0f;
+    float max_radius = 40.0f;
+    float step = 2.0f;
+    float threshold = 0.55f;
+    int max_circles = 8;
+};
+struct WatershedOp {
+    float radius = 1.5f;
+    bool lines = true;
+};
+
 struct ReconstructOp { float radius = 1.5f; };
 struct FillHolesOp { float radius = 1.5f; };
 struct ThinOp {
@@ -173,7 +195,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               AdaptiveMedianOp, DegradeOp, RestoreOp, ColorGradientOp,
                               ColorDistanceOp, PseudoColorOp, DistanceOp,
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
-                              LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp>;
+                              LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
+                              HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

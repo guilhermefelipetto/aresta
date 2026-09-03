@@ -267,6 +267,28 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         *note = texto;
         return make_label(std::move(saida));
     }
+    if (const auto* op = std::get_if<HoughAccumulatorOp>(&params)) {
+        return make_scalar(hough_accumulator(in[0]->label.view(), op->thetas, op->rhos));
+    }
+    if (const auto* op = std::get_if<HoughLinesOp>(&params)) {
+        return make_label(hough_lines(in[0]->label.view(), op->thetas, op->rhos, op->threshold,
+                                      op->max_lines));
+    }
+    if (const auto* op = std::get_if<HoughCirclesOp>(&params)) {
+        return make_label(hough_circles(in[0]->label.view(), op->min_radius, op->max_radius,
+                                        op->step, op->threshold, op->max_circles));
+    }
+    if (const auto* op = std::get_if<WatershedOp>(&params)) {
+        Map<int32_t> saida = watershed(in[0]->scalar.view(), in[1]->label.view(),
+                                       in[2]->label.view(), adjacency_by_radius(op->radius),
+                                       op->lines);
+        int32_t maior = 0;
+        for (std::size_t i = 0; i < saida.count(); ++i) {
+            maior = std::max(maior, saida.data[i]);
+        }
+        *note = std::to_string(maior) + " bacias";
+        return make_label(std::move(saida));
+    }
     if (const auto* op = std::get_if<DistanceOp>(&params)) {
         return make_scalar(distance_transform(in[0]->label.view(), op->inside));
     }
@@ -384,6 +406,16 @@ OpInfo op_info(const OpParams& params) {
                 return {"limiar local", 1, {ValueKind::Scalar}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, MultiOtsuOp>) {
                 return {"multi-Otsu", 1, {ValueKind::Scalar}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, HoughAccumulatorOp>) {
+                return {"acumulador de Hough", 1, {ValueKind::Label}, ValueKind::Scalar};
+            } else if constexpr (std::is_same_v<T, HoughLinesOp>) {
+                return {"retas de Hough", 1, {ValueKind::Label}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, HoughCirclesOp>) {
+                return {"círculos de Hough", 1, {ValueKind::Label}, ValueKind::Label};
+            } else if constexpr (std::is_same_v<T, WatershedOp>) {
+                return {"watershed", 3,
+                        {ValueKind::Scalar, ValueKind::Label, ValueKind::Label},
+                        ValueKind::Label};
             } else if constexpr (std::is_same_v<T, DistanceOp>) {
                 return {"distância", 1, {ValueKind::Label}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, ReconstructOp>) {
@@ -729,6 +761,9 @@ const char* input_label(const OpParams& params, int k) {
     if (std::get_if<ReconstructOp>(&params)) {
         return k == 0 ? "marcador" : "máscara";
     }
+    if (std::get_if<WatershedOp>(&params)) {
+        return k == 0 ? "relevo" : (k == 1 ? "marcadores" : "máscara");
+    }
     return "entrada";
 }
 
@@ -783,6 +818,18 @@ std::string stage_summary(const OpParams& params) {
         }
     } else if (const auto* op = std::get_if<MultiOtsuOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%d classes", op->classes);
+    } else if (const auto* op = std::get_if<HoughAccumulatorOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d ângulos por %d distâncias", op->thetas,
+                      op->rhos);
+    } else if (const auto* op = std::get_if<HoughLinesOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "até %d retas, corte %.2f", op->max_lines,
+                      op->threshold);
+    } else if (const auto* op = std::get_if<HoughCirclesOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.0f a %.0f, até %d círculos", op->min_radius,
+                      op->max_radius, op->max_circles);
+    } else if (const auto* op = std::get_if<WatershedOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "raio %.2f%s", op->radius,
+                      op->lines ? ", com divisores" : "");
     } else if (const auto* op = std::get_if<DistanceOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), op->inside ? "de dentro até o fundo"
                                                          : "do fundo até o objeto");

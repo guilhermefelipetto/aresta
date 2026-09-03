@@ -191,6 +191,10 @@ bool draw_operation_items(App& app) {
         {"Binário", "multi-Otsu", MultiOtsuOp{}, "um estágio escalar"},
         {"Binário", "canny", CannyOp{}, "um estágio escalar"},
         {"Binário", "zero-crossings", LogEdgeOp{}, "um estágio escalar"},
+        {"Binário", "acumulador de Hough", HoughAccumulatorOp{}, "um estágio de rótulo"},
+        {"Binário", "retas de Hough", HoughLinesOp{}, "um estágio de rótulo"},
+        {"Binário", "círculos de Hough", HoughCirclesOp{}, "um estágio de rótulo"},
+        {"Binário", "watershed", WatershedOp{}, "um relevo escalar, marcadores e máscara"},
         {"Binário", "morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
         {"Binário", "hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
         {"Binário", "afinar", ThinOp{}, "um estágio de rótulo"},
@@ -587,6 +591,26 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<StretchOp>(&stage.params)) {
                     dirty |= ImGui::DragFloatRange2("##p", &op->low, &op->high, 0.05f, 0.0f, 100.0f,
                                                     "%.2f", "%.2f");
+                } else if (auto* op = std::get_if<HoughAccumulatorOp>(&stage.params)) {
+                    dirty |= ImGui::SliderInt("##p", &op->thetas, 64, 720, "%d ângulos");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderInt("##r", &op->rhos, 64, 720, "%d distâncias");
+                } else if (auto* op = std::get_if<HoughLinesOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->threshold, 0.05f, 1.0f, "corte %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderInt("##n", &op->max_lines, 1, 60, "até %d retas");
+                } else if (auto* op = std::get_if<HoughCirclesOp>(&stage.params)) {
+                    dirty |= ImGui::DragFloatRange2("##p", &op->min_radius, &op->max_radius, 0.5f,
+                                                    2.0f, 300.0f, "raio %.0f", "a %.0f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##s", &op->step, 0.5f, 10.0f, "passo %.1f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##t", &op->threshold, 0.1f, 1.0f, "corte %.2f");
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderInt("##n", &op->max_circles, 1, 40, "até %d círculos");
+                } else if (auto* op = std::get_if<WatershedOp>(&stage.params)) {
+                    dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 2.5f, "raio %.2f");
+                    dirty |= ImGui::Checkbox("marcar divisores", &op->lines);
                 } else if (auto* op = std::get_if<CannyOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->sigma, 0.0f, 5.0f, "sigma %.2f");
                     ImGui::SetNextItemWidth(-1.0f);

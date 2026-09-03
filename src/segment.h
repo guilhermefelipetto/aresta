@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "adjacency.h"
 #include "map.h"
 
 // Canny inteiro: suaviza, deriva, afina pela direção do gradiente e liga o que
@@ -27,3 +28,27 @@ Map<int32_t> adaptive_threshold(MapView<float> scalar, LocalThreshold kind, floa
 // Otsu com mais de duas classes: acha os limiares que maximizam a variância
 // entre elas. Devolve os níveis escolhidos em `levels`.
 Map<int32_t> multi_otsu(MapView<float> scalar, int classes, std::vector<float>* levels);
+
+// Acumulador de Hough para retas: colunas são o ângulo, linhas são a distância
+// até a origem. Cada ponto de borda vira uma senoide, e reta na imagem vira
+// pico aqui.
+Map<float> hough_accumulator(MapView<int32_t> edges, int thetas, int rhos);
+
+// As retas mais votadas, desenhadas de volta na imagem.
+Map<int32_t> hough_lines(MapView<int32_t> edges, int thetas, int rhos, float threshold,
+                         int max_lines);
+
+// Círculos por votação em (x, y, raio). `step` controla de quanto em quanto o
+// raio anda, porque o acumulador é tridimensional e cresce rápido.
+Map<int32_t> hough_circles(MapView<int32_t> edges, float min_radius, float max_radius, float step,
+                           float threshold, int max_circles);
+
+// Inundação a partir dos marcadores, na ordem do relevo. É a IFT com custo
+// fmax: cada pixel fica com o marcador cujo caminho até ele passa pelo ponto
+// mais baixo possível.
+//
+// A máscara é o que segura a água. Sem ela a frente escorre pelo fundo e uma
+// bacia só toma a imagem inteira, que é o modo clássico de o watershed
+// decepcionar.
+Map<int32_t> watershed(MapView<float> relief, MapView<int32_t> markers, MapView<int32_t> mask,
+                       const Adjacency& adjacency, bool draw_lines);
