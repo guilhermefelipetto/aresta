@@ -63,6 +63,23 @@ struct AdaptiveOp {
     float noise_variance = 0.005f;
 };
 struct AdaptiveMedianOp { float max_radius = 3.5f; };
+struct DegradeOp {
+    Degradation kind = Degradation::Motion;
+    float dx = 20.0f;
+    float dy = 0.0f;
+    float k = 5.0f;
+    Pad pad = Pad::Mirror;
+};
+struct RestoreOp {
+    Restoration method = Restoration::Wiener;
+    Degradation kind = Degradation::Motion;
+    float dx = 20.0f;
+    float dy = 0.0f;
+    float k = 5.0f;
+    float parameter = 0.01f;
+    float limit = 0.3f;
+    Pad pad = Pad::Mirror;
+};
 struct SpectrumOp {
     Pad pad = Pad::Mirror;
     bool logarithmic = true;
@@ -104,7 +121,7 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               EqualizeOp, StretchOp, ClaheOp, CombineOp, CurveOp,
                               RankOp, MatchOp, BitPlaneOp, ComposeOp, SpectrumOp,
                               FreqFilterOp, NoiseOp, MeanOp, AdaptiveOp,
-                              AdaptiveMedianOp>;
+                              AdaptiveMedianOp, DegradeOp, RestoreOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

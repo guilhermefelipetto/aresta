@@ -348,3 +348,189 @@ Image adaptive_median(ImageView image, float max_radius) {
     });
     return out;
 }
+
+const char* degradation_name(Degradation kind) {
+    return kind == Degradation::Motion ? "movimento" : "turbulência";
+}
+
+const char* restoration_name(Restoration method) {
+    switch (method) {
+        case Restoration::Inverse: return "inverso";
+        case Restoration::Wiener: return "Wiener";
+        case Restoration::ConstrainedLS: return "mínimos quadrados";
+    }
+    return "?";
+}
+
+namespace {
+
+struct Complex {
+    float re;
+    float im;
+};
+
+float nyquist_radius(int width, int height) {
+    return std::hypot(static_cast<float>(width) * 0.5f, static_cast<float>(height) * 0.5f);
+}
+
+float signed_index(int index, int size) {
+    return static_cast<float>(index <= size / 2 ? index : index - size);
+}
+
+// H(u,v) da degradação. Movimento é o sinc com a fase do deslocamento;
+// turbulência é real e some com a distância.
+Complex degradation_at(Degradation kind, float u, float v, int width, int height, float dx,
+                       float dy, float k) {
+    if (kind == Degradation::Motion) {
+        const float s = std::numbers::pi_v<float> *
+                        (u * dx / static_cast<float>(width) + v * dy / static_cast<float>(height));
+        const float amplitude = std::fabs(s) < 1e-6f ? 1.0f : std::sin(s) / s;
+        return {amplitude * std::cos(-s), amplitude * std::sin(-s)};
+    }
+    const float radius = nyquist_radius(width, height);
+    const float d2 = (u * u + v * v) / (radius * radius);
+    return {std::exp(-k * std::pow(d2, 5.0f / 6.0f)), 0.0f};
+}
+
+// |P(u,v)|^2 do laplaciano 3x3, em forma fechada. É o termo que segura a
+// oscilação nos mínimos quadrados restritos.
+float laplacian_power(float u, float v, int width, int height) {
+    const float p = -4.0f +
+                    2.0f * std::cos(2.0f * std::numbers::pi_v<float> * u / width) +
+                    2.0f * std::cos(2.0f * std::numbers::pi_v<float> * v / height);
+    return p * p;
+}
+
+void apply_degradation(Spectrum& spectrum, Degradation kind, float dx, float dy, float k) {
+    for (int y = 0; y < spectrum.height; ++y) {
+        const float v = signed_index(y, spectrum.height);
+        for (int x = 0; x < spectrum.width; ++x) {
+            const float u = signed_index(x, spectrum.width);
+            const Complex h =
+                degradation_at(kind, u, v, spectrum.width, spectrum.height, dx, dy, k);
+            const std::size_t at = static_cast<std::size_t>(y) * spectrum.width + x;
+            const float re = spectrum.re[at];
+            const float im = spectrum.im[at];
+            spectrum.re[at] = re * h.re - im * h.im;
+            spectrum.im[at] = re * h.im + im * h.re;
+        }
+    }
+}
+
+void apply_restoration(Spectrum& spectrum, Restoration method, Degradation kind, float dx,
+                       float dy, float k, float parameter, float limit) {
+    const float radius = nyquist_radius(spectrum.width, spectrum.height);
+    const float cut = std::max(limit, 1e-4f) * radius;
+
+    for (int y = 0; y < spectrum.height; ++y) {
+        const float v = signed_index(y, spectrum.height);
+        for (int x = 0; x < spectrum.width; ++x) {
+            const float u = signed_index(x, spectrum.width);
+            const std::size_t at = static_cast<std::size_t>(y) * spectrum.width + x;
+            const Complex h =
+                degradation_at(kind, u, v, spectrum.width, spectrum.height, dx, dy, k);
+            const float power = h.re * h.re + h.im * h.im;
+
+            float wr = 0.0f;
+            float wi = 0.0f;
+            switch (method) {
+                case Restoration::Inverse: {
+                    // Onde H é quase zero, 1/H explode e o ruído vira o
+                    // resultado inteiro. Por isso o raio de corte.
+                    if (std::hypot(u, v) <= cut && power > 1e-8f) {
+                        wr = h.re / power;
+                        wi = -h.im / power;
+                    }
+                    break;
+                }
+                case Restoration::Wiener: {
+                    const float denom = power + std::max(parameter, 1e-9f);
+                    wr = h.re / denom;
+                    wi = -h.im / denom;
+                    break;
+                }
+                default: {
+                    const float denom =
+                        power + parameter * laplacian_power(u, v, spectrum.width, spectrum.height);
+                    if (denom > 1e-9f) {
+                        wr = h.re / denom;
+                        wi = -h.im / denom;
+                    }
+                    break;
+                }
+            }
+
+            const float re = spectrum.re[at];
+            const float im = spectrum.im[at];
+            spectrum.re[at] = re * wr - im * wi;
+            spectrum.im[at] = re * wi + im * wr;
+        }
+    }
+}
+
+template <typename Apply>
+Map<float> through_frequency(MapView<float> scalar, Pad pad, Apply apply) {
+    Spectrum spectrum = forward_fft(scalar, pad);
+    apply(spectrum);
+    return inverse_fft(spectrum);
+}
+
+template <typename Apply>
+Image image_through_frequency(ImageView image, Pad pad, Apply apply) {
+    Image out(image.width, image.height);
+    Map<float> plano(image.width, image.height);
+
+    for (int channel = 0; channel < 3; ++channel) {
+        for (int y = 0; y < image.height; ++y) {
+            const float* p = image.row(y);
+            float* row = plano.view().row(y);
+            for (int x = 0; x < image.width; ++x) {
+                row[x] = p[x * 4 + channel];
+            }
+        }
+        const Map<float> feito = through_frequency(plano.view(), pad, apply);
+        for (int y = 0; y < image.height; ++y) {
+            const float* row = feito.view().row(y);
+            float* q = out.view().row(y);
+            for (int x = 0; x < image.width; ++x) {
+                q[x * 4 + channel] = row[x];
+            }
+        }
+    }
+    for (int y = 0; y < image.height; ++y) {
+        const float* p = image.row(y);
+        float* q = out.view().row(y);
+        for (int x = 0; x < image.width; ++x) {
+            q[x * 4 + 3] = p[x * 4 + 3];
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+Map<float> degrade(MapView<float> scalar, Degradation kind, float dx, float dy, float k, Pad pad) {
+    return through_frequency(scalar, pad, [&](Spectrum& spectrum) {
+        apply_degradation(spectrum, kind, dx, dy, k);
+    });
+}
+
+Image degrade(ImageView image, Degradation kind, float dx, float dy, float k, Pad pad) {
+    return image_through_frequency(image, pad, [&](Spectrum& spectrum) {
+        apply_degradation(spectrum, kind, dx, dy, k);
+    });
+}
+
+Map<float> restore(MapView<float> scalar, Restoration method, Degradation kind, float dx, float dy,
+                   float k, float parameter, float limit, Pad pad) {
+    return through_frequency(scalar, pad, [&](Spectrum& spectrum) {
+        apply_restoration(spectrum, method, kind, dx, dy, k, parameter, limit);
+    });
+}
+
+Image restore(ImageView image, Restoration method, Degradation kind, float dx, float dy, float k,
+              float parameter, float limit, Pad pad) {
+    return image_through_frequency(image, pad, [&](Spectrum& spectrum) {
+        apply_restoration(spectrum, method, kind, dx, dy, k, parameter, limit);
+    });
+}

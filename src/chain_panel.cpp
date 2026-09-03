@@ -116,6 +116,8 @@ bool draw_operation_items(App& app) {
         {"média", MeanOp{}, "um estágio de cor ou escalar"},
         {"redução adaptativa", AdaptiveOp{}, "um estágio de cor ou escalar"},
         {"mediana adaptativa", AdaptiveMedianOp{}, "um estágio de cor ou escalar"},
+        {"degradar", DegradeOp{}, "um estágio de cor ou escalar"},
+        {"restaurar", RestoreOp{}, "um estágio de cor ou escalar"},
         {"plano de bit", BitPlaneOp{}, "um estágio de cor ou escalar"},
         {nullptr, SourceOp{}, nullptr},
         {"espectro", SpectrumOp{}, "um estágio de cor ou escalar"},
@@ -474,6 +476,55 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<AdaptiveMedianOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->max_radius, 1.5f, 6.0f,
                                                 "raio máximo %.2f");
+                } else if (auto* op = std::get_if<DegradeOp>(&stage.params)) {
+                    int kind = static_cast<int>(op->kind);
+                    if (ImGui::Combo("##p", &kind, "movimento\0turbulência\0")) {
+                        op->kind = static_cast<Degradation>(kind);
+                        dirty = true;
+                    }
+                    if (op->kind == Degradation::Motion) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em x", &op->dx, 0.2f, -100.0f, 100.0f, "%.1f");
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em y", &op->dy, 0.2f, -100.0f, 100.0f, "%.1f");
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("k", &op->k, 0.05f, 0.0f, 60.0f, "%.2f");
+                    }
+                } else if (auto* op = std::get_if<RestoreOp>(&stage.params)) {
+                    int method = static_cast<int>(op->method);
+                    if (ImGui::Combo("##p", &method,
+                                     "inverso\0Wiener\0mínimos quadrados\0")) {
+                        op->method = static_cast<Restoration>(method);
+                        dirty = true;
+                    }
+                    if (op->method == Restoration::Inverse) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::SliderFloat("corte", &op->limit, 0.01f, 1.5f, "%.3f",
+                                                    ImGuiSliderFlags_Logarithmic);
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat(
+                            op->method == Restoration::Wiener ? "K" : "gama", &op->parameter,
+                            0.0002f, 0.0f, 2.0f, "%.5f");
+                    }
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("degradação suposta");
+                    int kind = static_cast<int>(op->kind);
+                    ImGui::SetNextItemWidth(-90.0f);
+                    if (ImGui::Combo("modelo", &kind, "movimento\0turbulência\0")) {
+                        op->kind = static_cast<Degradation>(kind);
+                        dirty = true;
+                    }
+                    if (op->kind == Degradation::Motion) {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em x", &op->dx, 0.2f, -100.0f, 100.0f, "%.1f");
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("px em y", &op->dy, 0.2f, -100.0f, 100.0f, "%.1f");
+                    } else {
+                        ImGui::SetNextItemWidth(-90.0f);
+                        dirty |= ImGui::DragFloat("k", &op->k, 0.05f, 0.0f, 60.0f, "%.2f");
+                    }
                 } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
                 } else if (auto* op = std::get_if<CombineOp>(&stage.params)) {

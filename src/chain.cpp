@@ -80,6 +80,21 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         }
         return make_color(adaptive_median(in[0]->color.view(), op->max_radius));
     }
+    if (const auto* op = std::get_if<DegradeOp>(&params)) {
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(
+                degrade(in[0]->scalar.view(), op->kind, op->dx, op->dy, op->k, op->pad));
+        }
+        return make_color(degrade(in[0]->color.view(), op->kind, op->dx, op->dy, op->k, op->pad));
+    }
+    if (const auto* op = std::get_if<RestoreOp>(&params)) {
+        if (in[0]->kind == ValueKind::Scalar) {
+            return make_scalar(restore(in[0]->scalar.view(), op->method, op->kind, op->dx, op->dy,
+                                       op->k, op->parameter, op->limit, op->pad));
+        }
+        return make_color(restore(in[0]->color.view(), op->method, op->kind, op->dx, op->dy, op->k,
+                                  op->parameter, op->limit, op->pad));
+    }
     if (const auto* op = std::get_if<SpectrumOp>(&params)) {
         const Map<float> plano = in[0]->kind == ValueKind::Scalar
                                      ? Map<float>{}
@@ -282,6 +297,10 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, AdaptiveMedianOp>) {
                 return {"mediana adaptativa", 1, {ValueKind::Color}, ValueKind::Color,
                         Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, DegradeOp>) {
+                return {"degradar", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, RestoreOp>) {
+                return {"restaurar", 1, {ValueKind::Color}, ValueKind::Color, Poly::ColorOrScalar};
             } else if constexpr (std::is_same_v<T, SpectrumOp>) {
                 return {"espectro", 1, {ValueKind::Color}, ValueKind::Scalar,
                         Poly::ColorOrScalar};
@@ -580,6 +599,33 @@ std::string stage_summary(const OpParams& params) {
                       op->noise_variance);
     } else if (const auto* op = std::get_if<AdaptiveMedianOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "raio máximo %.2f", op->max_radius);
+    } else if (const auto* op = std::get_if<DegradeOp>(&params)) {
+        if (op->kind == Degradation::Motion) {
+            std::snprintf(buffer, sizeof(buffer), "movimento %.1f x %.1f px", op->dx, op->dy);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "turbulência k=%.2f", op->k);
+        }
+    } else if (const auto* op = std::get_if<RestoreOp>(&params)) {
+        char suposto[64];
+        if (op->kind == Degradation::Motion) {
+            std::snprintf(suposto, sizeof(suposto), "movimento %.1f x %.1f", op->dx, op->dy);
+        } else {
+            std::snprintf(suposto, sizeof(suposto), "turbulência k=%.2f", op->k);
+        }
+        switch (op->method) {
+            case Restoration::Inverse:
+                std::snprintf(buffer, sizeof(buffer), "inverso, corte %.3f, supondo %s",
+                              op->limit, suposto);
+                break;
+            case Restoration::Wiener:
+                std::snprintf(buffer, sizeof(buffer), "Wiener, K %.5f, supondo %s", op->parameter,
+                              suposto);
+                break;
+            default:
+                std::snprintf(buffer, sizeof(buffer), "mín. quadrados, gama %.5f, supondo %s",
+                              op->parameter, suposto);
+                break;
+        }
     } else if (const auto* op = std::get_if<SpectrumOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s%s", pad_name(op->pad),
                       op->logarithmic ? ", log" : "");

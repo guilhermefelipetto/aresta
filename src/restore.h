@@ -1,6 +1,7 @@
 #pragma once
 
 #include "adjacency.h"
+#include "fft.h"
 #include "image.h"
 #include "map.h"
 
@@ -34,3 +35,23 @@ Map<float> adaptive_denoise(MapView<float> scalar, const Adjacency& adjacency,
 // sal e pimenta denso, onde a mediana de janela fixa já desiste.
 Image adaptive_median(ImageView image, float max_radius);
 Map<float> adaptive_median(MapView<float> scalar, float max_radius);
+
+enum class Degradation { Motion, Turbulence };
+enum class Restoration { Inverse, Wiener, ConstrainedLS };
+
+const char* degradation_name(Degradation kind);
+const char* restoration_name(Restoration method);
+
+// Borrado de movimento pede o deslocamento em pixels; turbulência pede a
+// constante k. As duas usam frequência normalizada pelo raio de Nyquist, então
+// o mesmo parâmetro quer dizer a mesma coisa em qualquer resolução.
+Image degrade(ImageView image, Degradation kind, float dx, float dy, float k, Pad pad);
+Map<float> degrade(MapView<float> scalar, Degradation kind, float dx, float dy, float k, Pad pad);
+
+// Restaurar exige supor uma degradação, e é isso que o capítulo ensina: os
+// parâmetros aqui têm que bater com os que sujaram a imagem, senão o resultado
+// não quer dizer nada.
+Image restore(ImageView image, Restoration method, Degradation kind, float dx, float dy, float k,
+              float parameter, float limit, Pad pad);
+Map<float> restore(MapView<float> scalar, Restoration method, Degradation kind, float dx, float dy,
+                   float k, float parameter, float limit, Pad pad);
