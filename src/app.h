@@ -38,6 +38,9 @@ struct App {
     std::string path;
     std::string status;
 
+    int source_channels = 0;
+    int source_bits = 0;
+
     // Índice do que está na tela: o fixado quando existe, senão o selecionado.
     int shown() const;
 

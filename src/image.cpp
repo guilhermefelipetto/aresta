@@ -71,6 +71,20 @@ Map<float> Image::luma() const {
     return result;
 }
 
+bool probe_image(const std::string& path, int* channels, int* bits) {
+    int w = 0;
+    int h = 0;
+    int n = 0;
+    if (!stbi_info(path.c_str(), &w, &h, &n)) {
+        return false;
+    }
+    *channels = n;
+    // O stb expande 1, 2 e 4 bits pra 8 sem avisar, então isso é o que o
+    // decodificador entrega, não necessariamente o que o arquivo guarda.
+    *bits = stbi_is_16_bit(path.c_str()) ? 16 : 8;
+    return true;
+}
+
 Image load_image(const std::string& path, std::string& error) {
     int w = 0;
     int h = 0;

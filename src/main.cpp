@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -288,6 +289,15 @@ int main(int argc, char** argv) {
             ImGui::Spacing();
             ImGui::TextDisabled("Dimensões");
             ImGui::Text("%d x %d", app.source.width, app.source.height);
+            ImGui::Spacing();
+            ImGui::TextDisabled("Origem");
+            if (app.source_bits > 0) {
+                static const char* arranjo[5] = {"?", "cinza", "cinza e alfa", "RGB", "RGBA"};
+                ImGui::Text("%s, %d bits por canal",
+                            arranjo[std::clamp(app.source_channels, 0, 4)], app.source_bits);
+            } else {
+                ImGui::TextDisabled("cabeçalho não lido");
+            }
             ImGui::Spacing();
             ImGui::TextDisabled("Buffer");
             ImGui::TextUnformatted("RGBA float32, linear");

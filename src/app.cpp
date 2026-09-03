@@ -12,6 +12,10 @@ bool App::open(const std::string& file) {
 
     source = std::move(loaded);
     path = file;
+    if (!probe_image(file, &source_channels, &source_bits)) {
+        source_channels = 0;
+        source_bits = 0;
+    }
     status.clear();
     chain = Chain();
     viewed = 0;

@@ -34,6 +34,10 @@ struct Image {
     Map<float> luma() const;
 };
 
+// Lê só o cabeçalho: quantos canais e quantos bits o arquivo tem de fato. O
+// buffer não guarda isso, porque ele é sempre float32 de quatro canais.
+bool probe_image(const std::string& path, int* channels, int* bits);
+
 // Lê o arquivo com stb e converte de sRGB pra linear já na entrada.
 Image load_image(const std::string& path, std::string& error);
 
