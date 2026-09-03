@@ -381,7 +381,7 @@ ValueKind Chain::kind_of(int index) const {
     return op_info(stages[index].params).output;
 }
 
-int Chain::find_input(const OpInfo& info, int k, int prefer_id) const {
+int Chain::find_input(const OpInfo& info, int k, int prefer_id, int limit) const {
     const auto serves = [&](int index) {
         const ValueKind produced = kind_of(index);
         return (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
@@ -390,11 +390,11 @@ int Chain::find_input(const OpInfo& info, int k, int prefer_id) const {
 
     if (prefer_id >= 0) {
         const int index = index_of(prefer_id);
-        if (index >= 0 && serves(index)) {
+        if (index >= 0 && index < limit && serves(index)) {
             return prefer_id;
         }
     }
-    for (int i = static_cast<int>(stages.size()) - 1; i >= 0; --i) {
+    for (int i = limit - 1; i >= 0; --i) {
         if (serves(i)) {
             return stages[i].id;
         }
@@ -405,14 +405,15 @@ int Chain::find_input(const OpInfo& info, int k, int prefer_id) const {
 bool Chain::can_add(const OpParams& params) const {
     const OpInfo info = op_info(params);
     for (int k = 0; k < info.input_count; ++k) {
-        if (find_input(info, k, -1) < 0) {
+        if (find_input(info, k, -1, static_cast<int>(stages.size())) < 0) {
             return false;
         }
     }
     return true;
 }
 
-void Chain::wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inputs) const {
+void Chain::wire_inputs(const OpInfo& info, int prefer_id, int limit,
+                        std::vector<int>* inputs) const {
     inputs->assign(static_cast<std::size_t>(info.input_count), -1);
     if (info.input_count <= 0) {
         return;
@@ -425,13 +426,13 @@ void Chain::wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inp
     }
     if (!mesmo_tipo || info.input_count == 1) {
         for (int k = 0; k < info.input_count; ++k) {
-            (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id);
+            (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id, limit);
         }
         return;
     }
 
     std::vector<int> candidatos;
-    for (std::size_t i = 0; i < stages.size(); ++i) {
+    for (std::size_t i = 0; i < static_cast<std::size_t>(limit); ++i) {
         const ValueKind produced = kind_of(static_cast<int>(i));
         const bool serve = (info.poly != Poly::None) ? poly_accepts(info.poly, produced)
                                                      : (produced == info.inputs[0]);
@@ -451,15 +452,40 @@ void Chain::wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inp
     }
 }
 
-int Chain::add(OpParams params, int prefer_id) {
+int Chain::add(OpParams params, int prefer_id, int position) {
+    const int limit = (position < 0 || position > static_cast<int>(stages.size()))
+                          ? static_cast<int>(stages.size())
+                          : position;
+
     Stage stage;
     stage.id = next_id++;
     stage.params = std::move(params);
+    wire_inputs(op_info(stage.params), prefer_id, limit, &stage.inputs);
 
-    wire_inputs(op_info(stage.params), prefer_id, &stage.inputs);
+    const int id = stage.id;
+    stages.insert(stages.begin() + limit, std::move(stage));
+    return id;
+}
 
-    stages.push_back(std::move(stage));
-    return stages.back().id;
+bool Chain::move_stage(int id, int delta) {
+    const int from = index_of(id);
+    const int to = from + delta;
+    if (from <= 0 || to <= 0 || to >= static_cast<int>(stages.size())) {
+        return false;
+    }
+
+    std::swap(stages[static_cast<std::size_t>(from)], stages[static_cast<std::size_t>(to)]);
+    for (std::size_t i = 0; i < stages.size(); ++i) {
+        for (int input : stages[i].inputs) {
+            const int at = index_of(input);
+            if (at >= static_cast<int>(i)) {
+                std::swap(stages[static_cast<std::size_t>(from)],
+                          stages[static_cast<std::size_t>(to)]);
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void Chain::remove(int id) {

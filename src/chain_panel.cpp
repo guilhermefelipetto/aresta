@@ -157,11 +157,15 @@ bool draw_operation_items(App& app) {
         }
 
         if (ImGui::MenuItem(entry.label, via ? shortcut : nullptr, false, ready || bridged)) {
+            // Entra logo depois do que está selecionado, não no fim: quem
+            // acrescenta operação quer continuar dali.
+            int depois = app.viewed + 1;
             int input = viewed_id;
             if (bridged) {
-                input = app.chain.add(bridge, viewed_id);
+                input = app.chain.add(bridge, viewed_id, depois);
+                ++depois;
             }
-            app.viewed = app.chain.index_of(app.chain.add(entry.params, input));
+            app.viewed = app.chain.index_of(app.chain.add(entry.params, input, depois));
             added = true;
         }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
@@ -459,6 +463,20 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     ImGui::SameLine();
                     if (ImGui::SmallButton("editar")) {
                         app.edit_request = stage.id;
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("sobe")) {
+                    if (app.chain.move_stage(stage.id, -1)) {
+                        app.viewed = app.chain.index_of(stage.id);
+                        dirty = true;
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("desce")) {
+                    if (app.chain.move_stage(stage.id, 1)) {
+                        app.viewed = app.chain.index_of(stage.id);
+                        dirty = true;
                     }
                 }
                 ImGui::SameLine();

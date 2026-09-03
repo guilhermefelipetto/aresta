@@ -208,14 +208,22 @@ struct Chain {
 
     // Id do estágio que serve de entrada k, ou -1 se nenhum serve. `prefer` é
     // tentado primeiro, pra operação nova pendurar no que está sendo olhado.
-    int find_input(const OpInfo& info, int k, int prefer_id) const;
+    int find_input(const OpInfo& info, int k, int prefer_id, int limit) const;
 
     // Quando a operação tem várias entradas do mesmo tipo, ligar as três no
     // mesmo estágio nunca é o que a pessoa queria. Espalha pelos últimos.
-    void wire_inputs(const OpInfo& info, int prefer_id, std::vector<int>* inputs) const;
+    void wire_inputs(const OpInfo& info, int prefer_id, int limit,
+                     std::vector<int>* inputs) const;
     bool can_add(const OpParams& params) const;
 
-    int add(OpParams params, int prefer_id = -1);
+    // `position` é onde o estágio entra; -1 põe no fim. Só estágios acima da
+    // posição contam como candidatos a entrada, senão a ligação apontaria pra
+    // frente e a cadeia deixaria de ser avaliável em uma passada.
+    int add(OpParams params, int prefer_id = -1, int position = -1);
+
+    // Troca com o vizinho. Recusa quando a troca faria alguém depender de quem
+    // vem depois.
+    bool move_stage(int id, int delta);
     void remove(int id);
     void evaluate(const Image& source);
 };

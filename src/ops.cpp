@@ -184,15 +184,20 @@ namespace {
 constexpr int tone_bins = 4096;
 constexpr int curve_samples = 1024;
 
+// A curva sai normalizada em 0..1, mas devolver nessa faixa quebraria mapa que
+// não vive nela: equalizar o L do Lab, que vai de 0 a 100, espremeria o canal
+// inteiro em 1% da escala. Então a saída volta pro intervalo da entrada.
 struct ToneCurve {
     float lo = 0.0f;
     float span = 1.0f;
+    bool rescale = false;
     std::vector<float> mapped = std::vector<float>(tone_bins, 0.0f);
 
     float apply(float value) const {
         const int bin = std::clamp(static_cast<int>((value - lo) / span * tone_bins), 0,
                                    tone_bins - 1);
-        return mapped[static_cast<std::size_t>(bin)];
+        const float t = mapped[static_cast<std::size_t>(bin)];
+        return rescale ? lo + t * span : t;
     }
 };
 
@@ -318,7 +323,8 @@ void apply_to_scalar(MapView<float> scalar, MakeCurve make_curve) {
             values[at++] = row[x];
         }
     }
-    const ToneCurve curve = make_curve(count, [&](std::size_t i) { return values[i]; });
+    ToneCurve curve = make_curve(count, [&](std::size_t i) { return values[i]; });
+    curve.rescale = true;
     for (int y = 0; y < scalar.height; ++y) {
         float* row = scalar.row(y);
         for (int x = 0; x < scalar.width; ++x) {
@@ -378,6 +384,7 @@ std::vector<float> clahe_map(const std::vector<float>& values, int width, int he
     float hi = 0.0f;
     scan_range(values.size(), [&](std::size_t i) { return values[i]; }, &lo, &hi);
     const float span = (hi > lo) ? (hi - lo) : 1.0f;
+    const bool rescale = lo < -1e-4f || hi > 1.0f + 1e-4f;
 
     const auto bin_of = [&](float value) {
         return std::clamp(static_cast<int>((value - lo) / span * clahe_bins), 0, clahe_bins - 1);
@@ -474,7 +481,8 @@ std::vector<float> clahe_map(const std::vector<float>& values, int width, int he
             };
             const float top = at(tx0, ty0) * (1.0f - wx) + at(tx1, ty0) * wx;
             const float bottom = at(tx0, ty1) * (1.0f - wx) + at(tx1, ty1) * wx;
-            out[index] = top * (1.0f - wy) + bottom * wy;
+            const float t = top * (1.0f - wy) + bottom * wy;
+            out[index] = rescale ? lo + t * span : t;
         }
     }
     return out;
@@ -674,10 +682,14 @@ bool apply_curve(MapView<float> scalar, const char* expression, float a, float b
     }
     const float span = (hi > lo) ? (hi - lo) : 1.0f;
 
+    // Mapa que não vive em 0..1 recebe a curva normalizada e volta pra escala
+    // dele, senão a próxima operação lê um número que não quer dizer nada.
+    const bool rescale = lo < -1e-4f || hi > 1.0f + 1e-4f;
     for (int y = 0; y < scalar.height; ++y) {
         float* row = scalar.row(y);
         for (int x = 0; x < scalar.width; ++x) {
-            row[x] = sample_curve(table, (row[x] - lo) / span);
+            const float t = sample_curve(table, (row[x] - lo) / span);
+            row[x] = rescale ? lo + t * span : t;
         }
     }
     return true;
