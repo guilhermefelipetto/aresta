@@ -14,6 +14,8 @@ struct SheetWindow {
     std::vector<SheetItem> items;
     SheetLayout layout;
 
+    bool vector = false;  // SVG em vez de PNG
+
     char folder[512] = {};
     char name[256] = {};
 

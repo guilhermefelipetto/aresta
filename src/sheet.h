@@ -29,6 +29,11 @@ struct SheetLayout {
     SheetBackground background = SheetBackground::Dark;
     bool labels = true;
     bool frame = false;     // filete em volta de cada quadro
+
+    // Multiplica tudo na hora de gravar, inclusive o corpo da letra, que é
+    // assada de novo no tamanho novo em vez de ser esticada. É isso que faz a
+    // figura aguentar zoom no PDF.
+    int scale = 1;
 };
 
 struct Sheet {
@@ -45,6 +50,16 @@ Sheet compose_sheet(const App& app, const std::vector<SheetItem>& items,
                     const SheetLayout& layout);
 
 bool write_sheet(const Sheet& sheet, const std::string& path, std::string* error);
+
+// SVG com a legenda e o filete em vetor, e cada quadro embutido como PNG na
+// resolução de origem. Zoom no artigo não borra o texto, e a imagem só perde
+// a partir do tamanho que ela realmente tem.
+bool write_sheet_svg(const App& app, const std::vector<SheetItem>& items,
+                     const SheetLayout& layout, const std::string& path, std::string* error);
+
+// Tamanho que o arquivo vai ter, sem montar nada.
+void sheet_size(const App& app, const std::vector<SheetItem>& items, const SheetLayout& layout,
+                int* width, int* height);
 
 // Preenche a lista com a cadeia inteira, legenda no resumo de cada estágio.
 std::vector<SheetItem> sheet_items_from(const App& app);

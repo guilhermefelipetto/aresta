@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <memory>
 
 #include <imgui.h>
@@ -126,8 +127,37 @@ void redimensiona(const unsigned char* origem, int ow, int oh, unsigned char* de
     }
 }
 
-float largura_do_texto(const char* texto) {
-    return ImGui::CalcTextSize(texto).x;
+ImFontBaked* baked(float corpo) {
+    ImFont* fonte = ImGui::GetFont();
+    return fonte ? fonte->GetFontBaked(corpo) : nullptr;
+}
+
+// O ImGui assa a fonte no corpo pedido, mas se o atlas estiver no modo antigo
+// ele devolve o tamanho que já tinha. Aí o glifo é ampliado por esse fator:
+// perde nitidez, mas a legenda nunca sai com o tamanho errado.
+float estica(const ImFontBaked* fonte, float corpo) {
+    return (fonte && fonte->Size > 0.0f) ? corpo / fonte->Size : 1.0f;
+}
+
+float largura_do_texto(const char* texto, float corpo) {
+    ImFontBaked* fonte = baked(corpo);
+    if (!fonte) {
+        return 0.0f;
+    }
+    const float k = estica(fonte, corpo);
+    float largura = 0.0f;
+    for (const char* p = texto; *p;) {
+        unsigned int ponto = 0;
+        const int passo = ImTextCharFromUtf8(&ponto, p, nullptr);
+        p += passo > 0 ? passo : 1;
+        if (ponto == 0) {
+            break;
+        }
+        if (const ImFontGlyph* glifo = fonte->FindGlyph(static_cast<ImWchar>(ponto))) {
+            largura += glifo->AdvanceX * k;
+        }
+    }
+    return largura;
 }
 
 // A legenda sai da fonte do próprio ImGui, glifo por glifo do atlas. Assim a
@@ -157,8 +187,8 @@ float amostra_alfa(const unsigned char* pixels, int aw, int ah, int bpp, float x
 // A legenda sai da fonte do próprio ImGui, glifo por glifo do atlas. Assim a
 // figura sai com a mesma letra da interface e não entra dependência de
 // rasterizador.
-void escreve(Sheet& folha, float x, float y, const char* texto, Cor cor) {
-    ImFontBaked* fonte = ImGui::GetFontBaked();
+void escreve(Sheet& folha, float x, float y, const char* texto, Cor cor, float corpo) {
+    ImFontBaked* fonte = baked(corpo);
     if (!fonte) {
         return;
     }
@@ -183,6 +213,7 @@ void escreve(Sheet& folha, float x, float y, const char* texto, Cor cor) {
     const int aw = atlas->Width;
     const int ah = atlas->Height;
     const int bpp = atlas->BytesPerPixel;
+    const float k = estica(fonte, corpo);
 
     const char* p = texto;
     while (*p) {
@@ -199,10 +230,10 @@ void escreve(Sheet& folha, float x, float y, const char* texto, Cor cor) {
 
         // O retângulo no atlas não mede o mesmo que o retângulo na folha, então
         // quem manda no laço é o destino e a origem vem por UV.
-        const int dw = std::max(1, static_cast<int>(std::lround(glifo->X1 - glifo->X0)));
-        const int dh = std::max(1, static_cast<int>(std::lround(glifo->Y1 - glifo->Y0)));
-        const int px = static_cast<int>(std::lround(x + glifo->X0));
-        const int py = static_cast<int>(std::lround(y + glifo->Y0));
+        const int dw = std::max(1, static_cast<int>(std::lround((glifo->X1 - glifo->X0) * k)));
+        const int dh = std::max(1, static_cast<int>(std::lround((glifo->Y1 - glifo->Y0) * k)));
+        const int px = static_cast<int>(std::lround(x + glifo->X0 * k));
+        const int py = static_cast<int>(std::lround(y + glifo->Y0 * k));
         for (int j = 0; j < dh; ++j) {
             for (int i = 0; i < dw; ++i) {
                 const float u = glifo->U0 + (glifo->U1 - glifo->U0) * (i + 0.5f) / dw;
@@ -212,7 +243,7 @@ void escreve(Sheet& folha, float x, float y, const char* texto, Cor cor) {
                 pinta(folha, px + i, py + j, cor, alfa);
             }
         }
-        x += glifo->AdvanceX;
+        x += glifo->AdvanceX * k;
     }
 }
 
@@ -249,11 +280,36 @@ std::vector<SheetItem> sheet_items_from(const App& app) {
     return itens;
 }
 
-Sheet compose_sheet(const App& app, const std::vector<SheetItem>& items,
-                    const SheetLayout& layout) {
-    Sheet folha;
+namespace {
 
-    std::vector<Quadro> quadros;
+// O plano é a geometria da folha, sem um pixel desenhado. PNG e SVG saem do
+// mesmo cálculo, senão os dois divergiriam no dia que alguém mexesse num só.
+struct Celula {
+    int stage_index = -1;
+    int x = 0, y = 0, w = 0, h = 0;
+    float label_x = 0.0f;  // centro do quadro; quem escreve decide o alinhamento
+    float label_y = 0.0f;  // topo da linha de texto
+    std::string label;
+};
+
+struct Plano {
+    int width = 0;
+    int height = 0;
+    float corpo = 0.0f;   // tamanho da letra já multiplicado pela escala
+    float ascent = 0.0f;
+    std::vector<Celula> celulas;
+};
+
+Plano planeja(const App& app, const std::vector<SheetItem>& items, const SheetLayout& layout) {
+    Plano plano;
+    const int k = std::max(1, layout.scale);
+
+    struct Fonte {
+        int stage_index;
+        int ow, oh;
+        std::string label;
+    };
+    std::vector<Fonte> fontes;
     for (const SheetItem& item : items) {
         if (!item.on) {
             continue;
@@ -263,55 +319,96 @@ Sheet compose_sheet(const App& app, const std::vector<SheetItem>& items,
             continue;
         }
         const Value& valor = app.chain.outputs[indice];
-        if (valor.empty()) {
+        if (valor.empty() || valor.width() <= 0 || valor.height() <= 0) {
             continue;
         }
-
-        float lo = 0.0f;
-        float hi = 0.0f;
-        std::unique_ptr<unsigned char[]> rgba = to_display_rgba8(valor, app.colormap, &lo, &hi);
-        const int ow = valor.width();
-        const int oh = valor.height();
-        if (!rgba || ow <= 0 || oh <= 0) {
-            continue;
-        }
-
-        Quadro quadro;
-        quadro.width = std::max(1, layout.cell_width);
-        quadro.height = std::max(1, static_cast<int>(std::lround(
-                                        static_cast<double>(oh) * quadro.width / ow)));
-        quadro.pixels = std::make_unique<unsigned char[]>(
-            static_cast<std::size_t>(quadro.width) * quadro.height * 4);
-        redimensiona(rgba.get(), ow, oh, quadro.pixels.get(), quadro.width, quadro.height);
-        quadro.label = item.label;
-        quadros.push_back(std::move(quadro));
+        fontes.push_back({indice, valor.width(), valor.height(), item.label});
     }
-
-    if (quadros.empty()) {
-        return folha;
+    if (fontes.empty()) {
+        return plano;
     }
 
     // Colunas é teto, não largura fixa: com três quadros e o limite em cinco,
     // a folha sai com três, senão sobraria margem paga por célula vazia.
-    const int pedido = layout.columns > 0 ? layout.columns : static_cast<int>(quadros.size());
-    const int colunas = std::min(pedido, static_cast<int>(quadros.size()));
-    const int linhas = (static_cast<int>(quadros.size()) + colunas - 1) / colunas;
-    const float altura_texto = ImGui::GetTextLineHeight();
-    const int faixa = layout.labels ? static_cast<int>(altura_texto) + layout.label_gap : 0;
+    const int pedido = layout.columns > 0 ? layout.columns : static_cast<int>(fontes.size());
+    const int colunas = std::min(pedido, static_cast<int>(fontes.size()));
+    const int linhas = (static_cast<int>(fontes.size()) + colunas - 1) / colunas;
 
+    const int largura_celula = std::max(1, layout.cell_width * k);
+    const int gap = layout.gap * k;
+    const int margem = layout.margin * k;
+    const int folga = layout.label_gap * k;
+
+    plano.corpo = 16.0f * k;
+    if (ImFontBaked* fonte = baked(plano.corpo)) {
+        plano.ascent = fonte->Ascent * estica(fonte, plano.corpo);
+    }
+    const int faixa = layout.labels ? static_cast<int>(plano.corpo) + folga : 0;
+
+    std::vector<int> altura(fontes.size(), 0);
     std::vector<int> altura_da_linha(linhas, 0);
-    for (std::size_t i = 0; i < quadros.size(); ++i) {
-        const int linha = static_cast<int>(i) / colunas;
-        altura_da_linha[linha] = std::max(altura_da_linha[linha], quadros[i].height);
+    for (std::size_t i = 0; i < fontes.size(); ++i) {
+        altura[i] = std::max(1, static_cast<int>(std::lround(
+                                    static_cast<double>(fontes[i].oh) * largura_celula
+                                    / fontes[i].ow)));
+        altura_da_linha[i / colunas] = std::max(altura_da_linha[i / colunas], altura[i]);
     }
 
-    folha.width = layout.margin * 2 + colunas * layout.cell_width + (colunas - 1) * layout.gap;
-    folha.height = layout.margin * 2;
+    plano.width = margem * 2 + colunas * largura_celula + (colunas - 1) * gap;
+    plano.height = margem * 2 + (linhas - 1) * gap;
     for (int linha = 0; linha < linhas; ++linha) {
-        folha.height += altura_da_linha[linha] + faixa;
+        plano.height += altura_da_linha[linha] + faixa;
     }
-    folha.height += (linhas - 1) * layout.gap;
 
+    int y = margem;
+    for (int linha = 0; linha < linhas; ++linha) {
+        for (int coluna = 0; coluna < colunas; ++coluna) {
+            const std::size_t i = static_cast<std::size_t>(linha) * colunas + coluna;
+            if (i >= fontes.size()) {
+                break;
+            }
+            Celula celula;
+            celula.stage_index = fontes[i].stage_index;
+            celula.w = largura_celula;
+            celula.h = altura[i];
+            celula.x = margem + coluna * (largura_celula + gap);
+
+            // Quadro mais baixo que a linha fica no meio, senão a tira ganha
+            // um degrau que não quer dizer nada.
+            celula.y = y + (altura_da_linha[linha] - celula.h) / 2;
+            celula.label = fontes[i].label;
+            celula.label_x = celula.x + largura_celula * 0.5f;
+            celula.label_y = static_cast<float>(y + altura_da_linha[linha] + folga);
+            plano.celulas.push_back(std::move(celula));
+        }
+        y += altura_da_linha[linha] + faixa + gap;
+    }
+    return plano;
+}
+
+}  // namespace
+
+void sheet_size(const App& app, const std::vector<SheetItem>& items, const SheetLayout& layout,
+                int* width, int* height) {
+    const Plano plano = planeja(app, items, layout);
+    if (width) {
+        *width = plano.width;
+    }
+    if (height) {
+        *height = plano.height;
+    }
+}
+
+Sheet compose_sheet(const App& app, const std::vector<SheetItem>& items,
+                    const SheetLayout& layout) {
+    Sheet folha;
+    const Plano plano = planeja(app, items, layout);
+    if (plano.celulas.empty()) {
+        return folha;
+    }
+
+    folha.width = plano.width;
+    folha.height = plano.height;
     const Cor fundo = cor_do_fundo(layout.background);
     folha.pixels.assign(static_cast<std::size_t>(folha.width) * folha.height * 4, 0);
     for (std::size_t i = 0; i < folha.pixels.size(); i += 4) {
@@ -324,46 +421,42 @@ Sheet compose_sheet(const App& app, const std::vector<SheetItem>& items,
     const Cor texto = cor_do_texto(layout.background);
     const Cor filete = cor_do_filete(layout.background);
 
-    int y = layout.margin;
-    for (int linha = 0; linha < linhas; ++linha) {
-        for (int coluna = 0; coluna < colunas; ++coluna) {
-            const std::size_t i = static_cast<std::size_t>(linha) * colunas + coluna;
-            if (i >= quadros.size()) {
-                break;
-            }
-            const Quadro& quadro = quadros[i];
-            const int x = layout.margin + coluna * (layout.cell_width + layout.gap);
+    for (const Celula& celula : plano.celulas) {
+        const Value& valor = app.chain.outputs[celula.stage_index];
+        float lo = 0.0f;
+        float hi = 0.0f;
+        std::unique_ptr<unsigned char[]> rgba = to_display_rgba8(valor, app.colormap, &lo, &hi);
+        if (!rgba) {
+            continue;
+        }
+        std::vector<unsigned char> escalado(static_cast<std::size_t>(celula.w) * celula.h * 4);
+        redimensiona(rgba.get(), valor.width(), valor.height(), escalado.data(), celula.w,
+                     celula.h);
 
-            // Quadro mais baixo que a linha fica no meio, senão a tira ganha
-            // um degrau que não quer dizer nada.
-            const int topo = y + (altura_da_linha[linha] - quadro.height) / 2;
-
-            for (int j = 0; j < quadro.height; ++j) {
-                for (int k = 0; k < quadro.width; ++k) {
-                    const unsigned char* p =
-                        &quadro.pixels[(static_cast<std::size_t>(j) * quadro.width + k) * 4];
-                    pinta(folha, x + k, topo + j, {p[0], p[1], p[2], 255}, p[3] / 255.0f);
-                }
-            }
-
-            if (layout.frame) {
-                for (int k = -1; k <= quadro.width; ++k) {
-                    pinta(folha, x + k, topo - 1, filete, filete.a / 255.0f);
-                    pinta(folha, x + k, topo + quadro.height, filete, filete.a / 255.0f);
-                }
-                for (int j = -1; j <= quadro.height; ++j) {
-                    pinta(folha, x - 1, topo + j, filete, filete.a / 255.0f);
-                    pinta(folha, x + quadro.width, topo + j, filete, filete.a / 255.0f);
-                }
-            }
-
-            if (layout.labels && !quadro.label.empty()) {
-                const float largura = largura_do_texto(quadro.label.c_str());
-                escreve(folha, x + (quadro.width - largura) * 0.5f,
-                        y + altura_da_linha[linha] + layout.label_gap, quadro.label.c_str(), texto);
+        for (int j = 0; j < celula.h; ++j) {
+            for (int i = 0; i < celula.w; ++i) {
+                const unsigned char* p =
+                    &escalado[(static_cast<std::size_t>(j) * celula.w + i) * 4];
+                pinta(folha, celula.x + i, celula.y + j, {p[0], p[1], p[2], 255}, p[3] / 255.0f);
             }
         }
-        y += altura_da_linha[linha] + faixa + layout.gap;
+
+        if (layout.frame) {
+            for (int i = -1; i <= celula.w; ++i) {
+                pinta(folha, celula.x + i, celula.y - 1, filete, filete.a / 255.0f);
+                pinta(folha, celula.x + i, celula.y + celula.h, filete, filete.a / 255.0f);
+            }
+            for (int j = -1; j <= celula.h; ++j) {
+                pinta(folha, celula.x - 1, celula.y + j, filete, filete.a / 255.0f);
+                pinta(folha, celula.x + celula.w, celula.y + j, filete, filete.a / 255.0f);
+            }
+        }
+
+        if (layout.labels && !celula.label.empty()) {
+            const float largura = largura_do_texto(celula.label.c_str(), plano.corpo);
+            escreve(folha, celula.label_x - largura * 0.5f, celula.label_y, celula.label.c_str(),
+                    texto, plano.corpo);
+        }
     }
 
     return folha;
@@ -380,6 +473,162 @@ bool write_sheet(const Sheet& sheet, const std::string& path, std::string* error
                         sheet.width * 4)) {
         if (error) {
             *error = "não consegui escrever em " + path;
+        }
+        return false;
+    }
+    return true;
+}
+
+namespace {
+
+const char kBase64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+void base64(const unsigned char* dados, std::size_t n, std::string* saida) {
+    saida->reserve(saida->size() + (n + 2) / 3 * 4);
+    std::size_t i = 0;
+    for (; i + 2 < n; i += 3) {
+        const unsigned int bloco = (dados[i] << 16) | (dados[i + 1] << 8) | dados[i + 2];
+        *saida += kBase64[(bloco >> 18) & 63];
+        *saida += kBase64[(bloco >> 12) & 63];
+        *saida += kBase64[(bloco >> 6) & 63];
+        *saida += kBase64[bloco & 63];
+    }
+    if (i < n) {
+        const bool tem_dois = (i + 1 < n);
+        const unsigned int bloco = (dados[i] << 16) | (tem_dois ? (dados[i + 1] << 8) : 0);
+        *saida += kBase64[(bloco >> 18) & 63];
+        *saida += kBase64[(bloco >> 12) & 63];
+        *saida += tem_dois ? kBase64[(bloco >> 6) & 63] : '=';
+        *saida += '=';
+    }
+}
+
+void junta_png(void* contexto, void* dados, int tamanho) {
+    auto* saida = static_cast<std::vector<unsigned char>*>(contexto);
+    const auto* bytes = static_cast<const unsigned char*>(dados);
+    saida->insert(saida->end(), bytes, bytes + tamanho);
+}
+
+// Legenda vem do usuário e vai pra dentro de XML.
+std::string escapa(const std::string& texto) {
+    std::string saida;
+    for (char c : texto) {
+        switch (c) {
+            case '&': saida += "&amp;"; break;
+            case '<': saida += "&lt;"; break;
+            case '>': saida += "&gt;"; break;
+            case '"': saida += "&quot;"; break;
+            case '\'': saida += "&apos;"; break;
+            default: saida += c;
+        }
+    }
+    return saida;
+}
+
+std::string em_hex(Cor cor) {
+    char buffer[8];
+    std::snprintf(buffer, sizeof(buffer), "#%02x%02x%02x", cor.r, cor.g, cor.b);
+    return buffer;
+}
+
+}  // namespace
+
+bool write_sheet_svg(const App& app, const std::vector<SheetItem>& items,
+                     const SheetLayout& layout, const std::string& path, std::string* error) {
+    // No SVG a escala não faz sentido: a geometria é em unidade de usuário e o
+    // renderizador amplia. Quem dá resolução é o pixel de origem da imagem.
+    SheetLayout um = layout;
+    um.scale = 1;
+    const Plano plano = planeja(app, items, um);
+    if (plano.celulas.empty()) {
+        if (error) {
+            *error = "nenhum estágio selecionado";
+        }
+        return false;
+    }
+
+    const Cor fundo = cor_do_fundo(layout.background);
+    const Cor texto = cor_do_texto(layout.background);
+    const Cor filete = cor_do_filete(layout.background);
+
+    std::string svg;
+    char cabecalho[256];
+    std::snprintf(cabecalho, sizeof(cabecalho),
+                  "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+                  "xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"%d\" height=\"%d\" "
+                  "viewBox=\"0 0 %d %d\">\n",
+                  plano.width, plano.height, plano.width, plano.height);
+    svg += cabecalho;
+
+    if (fundo.a > 0) {
+        char rect[160];
+        std::snprintf(rect, sizeof(rect),
+                      "  <rect width=\"%d\" height=\"%d\" fill=\"%s\"/>\n", plano.width,
+                      plano.height, em_hex(fundo).c_str());
+        svg += rect;
+    }
+
+    for (const Celula& celula : plano.celulas) {
+        const Value& valor = app.chain.outputs[celula.stage_index];
+        float lo = 0.0f;
+        float hi = 0.0f;
+        std::unique_ptr<unsigned char[]> rgba = to_display_rgba8(valor, app.colormap, &lo, &hi);
+        if (!rgba) {
+            continue;
+        }
+
+        // O quadro entra na resolução que ele tem, não na do desenho: é isso
+        // que deixa o zoom no artigo mostrar pixel de verdade.
+        std::vector<unsigned char> png;
+        if (!stbi_write_png_to_func(junta_png, &png, valor.width(), valor.height(), 4, rgba.get(),
+                                    valor.width() * 4)) {
+            continue;
+        }
+
+        char abre[224];
+        std::snprintf(abre, sizeof(abre),
+                      "  <image x=\"%d\" y=\"%d\" width=\"%d\" height=\"%d\" "
+                      "preserveAspectRatio=\"none\" xlink:href=\"data:image/png;base64,",
+                      celula.x, celula.y, celula.w, celula.h);
+        svg += abre;
+        base64(png.data(), png.size(), &svg);
+        svg += "\"/>\n";
+
+        if (layout.frame) {
+            char rect[224];
+            std::snprintf(rect, sizeof(rect),
+                          "  <rect x=\"%.1f\" y=\"%.1f\" width=\"%d\" height=\"%d\" "
+                          "fill=\"none\" stroke=\"%s\" stroke-width=\"1\"/>\n",
+                          celula.x - 0.5f, celula.y - 0.5f, celula.w + 1, celula.h + 1,
+                          em_hex(filete).c_str());
+            svg += rect;
+        }
+
+        if (layout.labels && !celula.label.empty()) {
+            char texto_svg[320];
+            std::snprintf(texto_svg, sizeof(texto_svg),
+                          "  <text x=\"%.1f\" y=\"%.1f\" text-anchor=\"middle\" "
+                          "font-family=\"Ubuntu, DejaVu Sans, Helvetica, sans-serif\" "
+                          "font-size=\"%.1f\" fill=\"%s\">%s</text>\n",
+                          celula.label_x, celula.label_y + plano.ascent, plano.corpo,
+                          em_hex(texto).c_str(), escapa(celula.label).c_str());
+            svg += texto_svg;
+        }
+    }
+
+    svg += "</svg>\n";
+
+    std::ofstream saida(path, std::ios::binary);
+    if (!saida) {
+        if (error) {
+            *error = "não consegui escrever em " + path;
+        }
+        return false;
+    }
+    saida << svg;
+    if (!saida) {
+        if (error) {
+            *error = "escrita incompleta em " + path;
         }
         return false;
     }

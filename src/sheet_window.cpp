@@ -163,6 +163,62 @@ void draw_sheet_window(SheetWindow& window, App& app) {
         window.dirty = true;
     }
 
+    ImGui::Spacing();
+    ImGui::TextDisabled("Resolução");
+
+    if (ImGui::Checkbox("vetorizar (SVG)", &window.vector)) {
+        // Troca a extensão junto, senão sai .png com conteúdo de SVG dentro.
+        std::filesystem::path p(window.name);
+        p.replace_extension(window.vector ? ".svg" : ".png");
+        std::snprintf(window.name, sizeof(window.name), "%s", p.string().c_str());
+    }
+
+    if (window.vector) {
+        apoio("legenda e filete viram vetor, e cada quadro entra na resolução "
+              "que ele tem. A letra depende da fonte existir em quem abrir.");
+    } else {
+        ImGui::SetNextItemWidth(-120.0f);
+        if (ImGui::SliderInt("escala", &l.scale, 1, 4, "%dx")) {
+            window.dirty = true;
+        }
+
+        // Quadro menor que a origem joga resolução fora antes de chegar no
+        // artigo, e é isso que faz a figura borrar no zoom.
+        int nativo = 0;
+        for (const SheetItem& item : window.items) {
+            const int indice = item.on ? app.chain.index_of(item.stage_id) : -1;
+            if (indice >= 0 && indice < static_cast<int>(app.chain.outputs.size())) {
+                nativo = std::max(nativo, app.chain.outputs[indice].width());
+            }
+        }
+        const int efetivo = l.cell_width * l.scale;
+        if (nativo > 0 && efetivo < nativo) {
+            char aviso[160];
+            std::snprintf(aviso, sizeof(aviso),
+                          "quadro sai com %d px de largura, e a maior origem tem %d: "
+                          "está jogando resolução fora", efetivo, nativo);
+            apoio(aviso);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("usar a origem")) {
+                l.cell_width = std::max(1, nativo / std::max(1, l.scale));
+                window.dirty = true;
+            }
+        }
+    }
+
+    {
+        SheetLayout real = l;
+        if (window.vector) {
+            real.scale = 1;
+        }
+        int fw = 0;
+        int fh = 0;
+        sheet_size(app, window.items, real, &fw, &fh);
+        if (fw > 0) {
+            ImGui::TextDisabled("arquivo sai em %d x %d", fw, fh);
+        }
+    }
+
     ImGui::EndChild();
 
     ImGui::SameLine();
@@ -170,7 +226,9 @@ void draw_sheet_window(SheetWindow& window, App& app) {
 
     if (window.dirty) {
         window.dirty = false;
-        const Sheet folha = compose_sheet(app, window.items, window.layout);
+        SheetLayout previa = window.layout;
+        previa.scale = 1;
+        const Sheet folha = compose_sheet(app, window.items, previa);
         if (folha.empty()) {
             window.preview_width = 0;
             window.preview_height = 0;
@@ -229,11 +287,15 @@ void draw_sheet_window(SheetWindow& window, App& app) {
     ImGui::InputText("arquivo", window.name, sizeof(window.name));
     ImGui::SameLine();
     if (ImGui::Button("Exportar")) {
-        const Sheet folha = compose_sheet(app, window.items, window.layout);
         const std::string caminho =
             (std::filesystem::path(window.folder) / window.name).string();
         std::string erro;
-        window.failed = !write_sheet(folha, caminho, &erro);
+        if (window.vector) {
+            window.failed = !write_sheet_svg(app, window.items, window.layout, caminho, &erro);
+        } else {
+            const Sheet folha = compose_sheet(app, window.items, window.layout);
+            window.failed = !write_sheet(folha, caminho, &erro);
+        }
         window.message = window.failed ? erro : ("Salvo em " + caminho);
     }
     if (!window.message.empty()) {
