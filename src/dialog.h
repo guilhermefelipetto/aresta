@@ -18,3 +18,7 @@ PickResult pick_open_file(const std::string& title, const std::string& start,
 
 PickResult pick_save_file(const std::string& title, const std::string& suggested,
                           const std::vector<FileFilter>& filters, std::string* chosen);
+
+// Pasta padrão pra salvar. O XDG guarda o nome traduzido em user-dirs.dirs,
+// então chutar "Downloads" quebraria em sistema em português.
+std::string downloads_folder();

@@ -10,44 +10,9 @@
 
 #include "app.h"
 #include "chain.h"
+#include "dialog.h"
 
 namespace {
-
-// O XDG guarda a pasta de downloads traduzida em user-dirs.dirs, então chutar
-// "Downloads" quebraria em sistema em português.
-std::string downloads_folder() {
-    const char* home = std::getenv("HOME");
-    if (!home) {
-        return ".";
-    }
-    const std::filesystem::path config =
-        std::filesystem::path(home) / ".config" / "user-dirs.dirs";
-    std::ifstream file(config);
-    std::string line;
-    while (std::getline(file, line)) {
-        const std::string key = "XDG_DOWNLOAD_DIR=";
-        const std::size_t at = line.find(key);
-        if (at == std::string::npos || line.find('#') < at) {
-            continue;
-        }
-        std::string value = line.substr(at + key.size());
-        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-            value = value.substr(1, value.size() - 2);
-        }
-        const std::string prefix = "$HOME/";
-        if (value.rfind(prefix, 0) == 0) {
-            value = std::string(home) + "/" + value.substr(prefix.size());
-        }
-        std::error_code ec;
-        if (std::filesystem::is_directory(value, ec)) {
-            return value;
-        }
-    }
-
-    std::error_code ec;
-    const std::filesystem::path fallback = std::filesystem::path(home) / "Downloads";
-    return std::filesystem::is_directory(fallback, ec) ? fallback.string() : std::string(home);
-}
 
 std::string slug(const std::string& text) {
     std::string out;

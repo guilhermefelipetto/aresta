@@ -72,6 +72,8 @@ add_executable(aresta
     src/regions.cpp
     src/restore.cpp
     src/segment.cpp
+    src/sheet.cpp
+    src/sheet_window.cpp
     src/spaces.cpp
     src/texture.cpp
     src/ui.cpp

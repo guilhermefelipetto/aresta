@@ -29,6 +29,7 @@
 #include "histogram_window.h"
 #include "kernel_window.h"
 #include "project.h"
+#include "sheet_window.h"
 #include "ui.h"
 
 int main(int argc, char** argv) {
@@ -90,6 +91,7 @@ int main(int argc, char** argv) {
     CurveWindow curve_window;
     ComponentsWindow components_window;
     ExportWindow export_window;
+    SheetWindow sheet_window;
 
     bool chain_dirty = false;
     int fechar_aba = -1;
@@ -128,6 +130,7 @@ int main(int argc, char** argv) {
         components_window.editing = -1;
         histogram_window.seen_revision = -1;
         components_window.seen_revision = -1;
+        sheet_window.items.clear();
     };
 
     auto open_path = [&](const std::string& file, bool nova_aba) {
@@ -282,6 +285,9 @@ int main(int argc, char** argv) {
                 }
                 if (ImGui::MenuItem("Exportar como...", "Ctrl+E", false, !app.source.empty())) {
                     open_export_window(export_window, app);
+                }
+                if (ImGui::MenuItem("Exportar pipeline...", nullptr, false, !app.source.empty())) {
+                    open_sheet_window(sheet_window, app);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Abrir projeto...")) {
@@ -718,6 +724,7 @@ int main(int argc, char** argv) {
         draw_curve_window(curve_window, app);
         draw_components_window(components_window, app);
         draw_export_window(export_window, app);
+        draw_sheet_window(sheet_window, app);
 
         // Serializar o projeto todo frame seria desperdício, e marcar sujo na
         // mão esquece campo. Essa assinatura barata muda em toda alteração que
