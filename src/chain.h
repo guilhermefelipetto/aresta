@@ -6,12 +6,14 @@
 
 #include "convolve.h"
 #include "geometry.h"
+#include "metrics.h"
 #include "fft.h"
 #include "regions.h"
 #include "restore.h"
 #include "segment.h"
 #include "ops.h"
 #include "kernel.h"
+#include "metrics.h"
 #include "morphology.h"
 #include "value.h"
 
@@ -77,6 +79,20 @@ struct FlipOp {
     bool transpose = false;
 };
 struct QuantizeOp { int levels = 8; };
+
+// Duas entradas do mesmo tipo: a referência e o que se quer medir contra ela.
+// Sai um mapa de onde a imagem se afastou, e o resumo com os números.
+struct MetricsOp {
+    MetricMap map = MetricMap::AbsError;
+
+    // O PSNR e o SSIM só querem dizer alguma coisa junto com o pico. Um vem
+    // por convenção, o outro da faixa que a referência ocupa de fato.
+    bool peak_from_reference = false;
+
+    // Em cor, a literatura de PSNR e SSIM mede sobre o valor com gama. Medir
+    // no linear dá número que não bate com paper nenhum.
+    bool on_srgb = true;
+};
 struct CannyOp {
     float sigma = 1.2f;
     float low = 0.10f;
@@ -226,7 +242,8 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
                               LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
                               HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp,
-                              ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp>;
+                              ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp,
+                              MetricsOp>;
 
 // Operação que aceita mais de um tipo e devolve o que recebeu. Convolução não
 // entra em rótulo porque interpolar índice de região não quer dizer nada;

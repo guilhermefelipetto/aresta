@@ -79,13 +79,20 @@ quando a troca faria alguém depender de quem vem depois.
 | Cor | canal em RGB, HSV, HSI, Lab, YCbCr e CMY, composição, gradiente vetorial, distância a uma cor, pseudo-cor |
 | Binário | limiar (absoluto, fração ou nível, com Otsu), limiar local (média, gaussiana, Sauvola), multi-Otsu, Canny, zero-crossings do LoG, Hough para retas e círculos, watershed por marcadores, morfologia, hit-or-miss, afinamento, preencher buracos, reconstrução geodésica, componentes conexas, transformada de distância |
 | Geometria | redimensionar, girar, recortar, espelhar, quantizar |
-| Entre estágios | combinar (soma, subtração, diferença absoluta, produto, divisão, mín, máx, média), overlay, ruído |
+| Entre estágios | combinar (soma, subtração, diferença absoluta, produto, divisão, mín, máx, média), métricas (RMSE, MAE, PSNR, SNR, SSIM), overlay, ruído |
 
 Ruído tem gaussiano, rayleigh, gama, exponencial, uniforme, sal e pimenta e
 periódico, com semente fixa pra experimento repetir.
 
 A transformada de distância aceita euclidiana exata (Felzenszwalb e
 Huttenlocher, separável) ou chanfro em D4 e D8.
+
+`métricas` compara dois estágios e sai um mapa de onde eles se afastaram, com
+os números no resumo. O SSIM é a janela gaussiana 11x11 com sigma 1.5 do artigo
+do Wang, e a média ignora a faixa da borda, como no código original. Em cor a
+medição sai sobre o valor com gama, que é onde a literatura de PSNR e SSIM
+vive; no linear o número não bate com paper nenhum. Confere com o
+`scikit-image` em cinco casas.
 
 ## Convolução
 
@@ -239,10 +246,11 @@ Feito:
 - [x] exportar estágio: PNG, JPEG, BMP, TGA, Netpbm, PFM, CSV, NPY
 - [x] salvar e carregar projeto, com vários abertos em abas
 - [x] exportar o pipeline como figura, com legenda e fundo transparente
+- [x] métricas de erro entre estágios: RMSE, MAE, PSNR, SNR e SSIM
 
 Falta:
 
-- [ ] métricas de erro (PSNR, SSIM), descritores de região, wavelets
+- [ ] descritores de região, wavelets, casamento por correlação
 - [ ] pincel de semente, IFT e OIFT sobre a imagem
 - [ ] bancada de grafo: montar, desenhar, rodar algoritmo e exportar
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

@@ -136,6 +136,45 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
     if (const auto* op = std::get_if<PseudoColorOp>(&params)) {
         return make_color(pseudo_color(in[0]->scalar.view(), op->map));
     }
+    if (const auto* op = std::get_if<MetricsOp>(&params)) {
+        const Value& referencia = *in[0];
+        const Value& medida = *in[1];
+        if (referencia.width() != medida.width() || referencia.height() != medida.height()) {
+            char aviso[128];
+            std::snprintf(aviso, sizeof(aviso), "tamanhos diferentes: %dx%d e %dx%d",
+                          referencia.width(), referencia.height(), medida.width(),
+                          medida.height());
+            *note = aviso;
+            return {};
+        }
+
+        const bool cor = referencia.kind == ValueKind::Color;
+        const bool srgb = cor && op->on_srgb;
+        float pico = 1.0f;
+        if (op->peak_from_reference) {
+            pico = cor ? peak_of(referencia.color.view(), srgb)
+                       : peak_of(referencia.scalar.view());
+        }
+
+        const Metrics m = cor ? compare(referencia.color.view(), medida.color.view(), pico, srgb)
+                              : compare(referencia.scalar.view(), medida.scalar.view(), pico);
+
+        char aviso[256];
+        char psnr[24];
+        char snr[24];
+        std::snprintf(psnr, sizeof(psnr), std::isinf(m.psnr_db) ? "infinito" : "%.2f dB",
+                      m.psnr_db);
+        std::snprintf(snr, sizeof(snr), std::isinf(m.snr_db) ? "infinito" : "%.2f dB", m.snr_db);
+        std::snprintf(aviso, sizeof(aviso),
+                      "RMSE %.5f, MAE %.5f, PSNR %s, SNR %s, SSIM %.4f, pico %.4f%s", m.rmse,
+                      m.mae, psnr, snr, m.ssim, m.peak, srgb ? ", sobre sRGB" : "");
+        *note = aviso;
+
+        return make_scalar(cor ? metric_map(referencia.color.view(), medida.color.view(),
+                                            op->map, pico, srgb)
+                               : metric_map(referencia.scalar.view(), medida.scalar.view(),
+                                            op->map, pico));
+    }
     if (const auto* op = std::get_if<CurveOp>(&params)) {
         Value out = in[0]->clone();
         std::string error;
@@ -527,6 +566,9 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, EqualizeOp>) {
                 return {"equalizar", 1, {ValueKind::Color}, ValueKind::Color,
                         Poly::ColorOrScalar};
+            } else if constexpr (std::is_same_v<T, MetricsOp>) {
+                return {"métricas", 2, {ValueKind::Color, ValueKind::Color}, ValueKind::Scalar,
+                        Poly::PairTone};
             } else if constexpr (std::is_same_v<T, CombineOp>) {
                 return {"combinar", 2, {ValueKind::Color, ValueKind::Color}, ValueKind::Color,
                         Poly::Pair};
@@ -886,6 +928,9 @@ const char* input_label(const OpParams& params, int k) {
     if (std::get_if<CombineOp>(&params)) {
         return k == 0 ? "a" : "b";
     }
+    if (std::get_if<MetricsOp>(&params)) {
+        return k == 0 ? "referência" : "medida";
+    }
     if (std::get_if<ReconstructOp>(&params)) {
         return k == 0 ? "marcador" : "máscara";
     }
@@ -1018,6 +1063,9 @@ std::string stage_summary(const OpParams& params) {
         }
     } else if (const auto* op = std::get_if<CurveOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s   a=%.3f b=%.3f", op->expression, op->a, op->b);
+    } else if (const auto* op = std::get_if<MetricsOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s%s", metric_map_name(op->map),
+                      op->peak_from_reference ? ", pico da referência" : "");
     } else if (const auto* op = std::get_if<CombineOp>(&params)) {
         if (op->scale == 1.0f) {
             std::snprintf(buffer, sizeof(buffer), "%s", combine_name(op->operation));

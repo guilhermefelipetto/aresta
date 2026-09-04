@@ -68,7 +68,8 @@ namespace {
     X(RotateOp, "girar")                          \
     X(CropOp, "recortar")                         \
     X(FlipOp, "espelhar")                         \
-    X(QuantizeOp, "quantizar")
+    X(QuantizeOp, "quantizar")                    \
+    X(MetricsOp, "metricas")
 
 constexpr int kListadas = 0
 #define CONTA(T, K) +1
@@ -102,6 +103,7 @@ constexpr const char* kFreqKind[] = {"passa-baixa", "passa-alta", "passa-faixa",
 constexpr const char* kColormap[] = {"cinza", "viridis", "magma", "turbo", "hot"};
 constexpr const char* kBorder[] = {"zero", "estender", "espelhar", "circular"};
 constexpr const char* kConvPath[] = {"auto", "espacial", "frequencia"};
+constexpr const char* kMetricMap[] = {"erro-abs", "erro-quadrado", "ssim"};
 
 std::string sem_espaco(std::string texto) {
     std::size_t inicio = texto.find_first_not_of(" \t\r\n");
@@ -450,6 +452,11 @@ template <class V> void campos(CropOp& op, V& v) {
     v.campo("y", op.y);
     v.campo("largura", op.width);
     v.campo("altura", op.height);
+}
+template <class V> void campos(MetricsOp& op, V& v) {
+    v.enumeracao("mapa", op.map, kMetricMap);
+    v.campo("pico-da-referencia", op.peak_from_reference);
+    v.campo("srgb", op.on_srgb);
 }
 template <class V> void campos(FlipOp& op, V& v) {
     v.campo("horizontal", op.horizontal);

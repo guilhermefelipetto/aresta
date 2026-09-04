@@ -211,6 +211,7 @@ bool draw_operation_items(App& app) {
         {"Geometria", "quantizar", QuantizeOp{}, "um estágio de cor ou escalar"},
 
         {nullptr, "combinar", CombineOp{}, "dois estágios do mesmo tipo"},
+        {nullptr, "métricas", MetricsOp{}, "dois estágios do mesmo tipo"},
         {nullptr, "overlay", OverlayOp{}, "um estágio de cor e um de rótulo"},
         {nullptr, "ruído", NoiseOp{}, "um estágio de cor ou escalar"},
     };
@@ -857,6 +858,26 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                     }
                 } else if (auto* op = std::get_if<BitPlaneOp>(&stage.params)) {
                     dirty |= ImGui::SliderInt("##p", &op->plane, 0, 7, "bit %d");
+                } else if (auto* op = std::get_if<MetricsOp>(&stage.params)) {
+                    int mapa = static_cast<int>(op->map);
+                    if (ImGui::Combo("##p", &mapa,
+                                     "erro absoluto\0erro ao quadrado\0mapa SSIM\0")) {
+                        op->map = static_cast<MetricMap>(mapa);
+                        dirty = true;
+                    }
+                    dirty |= ImGui::Checkbox("pico da referência", &op->peak_from_reference);
+                    apoio(op->peak_from_reference
+                              ? "PSNR e SSIM contra a faixa que a referência ocupa"
+                              : "PSNR e SSIM contra o pico 1.0, que é a convenção");
+                    // O sRGB só faz sentido se a entrada for cor, e quem manda
+                    // é o que entra, não o que sai: a saída é sempre escalar.
+                    const int entrada =
+                        stage.inputs.empty() ? -1 : app.chain.index_of(stage.inputs[0]);
+                    if (entrada >= 0 && app.chain.kind_of(entrada) == ValueKind::Color) {
+                        dirty |= ImGui::Checkbox("medir sobre sRGB", &op->on_srgb);
+                        apoio("a literatura de PSNR e SSIM mede com gama. No linear o "
+                              "número não bate com paper nenhum");
+                    }
                 } else if (auto* op = std::get_if<CombineOp>(&stage.params)) {
                     int operation = static_cast<int>(op->operation);
                     if (ImGui::Combo("##p", &operation,

@@ -66,6 +66,7 @@ add_executable(aresta
     src/image.cpp
     src/kernel.cpp
     src/kernel_window.cpp
+    src/metrics.cpp
     src/morphology.cpp
     src/ops.cpp
     src/project.cpp
