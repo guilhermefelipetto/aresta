@@ -183,6 +183,16 @@ colormap e sem cortar).
 | CSV | nove dígitos |
 | NPY | abre no `numpy.load` |
 
+`Arquivo > Exportar pipeline` monta uma folha com os estágios que você marcar,
+lado a lado e com legenda embaixo de cada um, que é a figura que este README
+usa logo no começo. Colunas, largura do quadro, espaço, margem e filete se
+ajustam, e a prévia é a própria folha.
+
+O fundo vai transparente, branco, claro ou escuro. O transparente sai em PNG
+com alfa de verdade, pra cair num documento que já tem cor própria. Encolher
+quadro usa média de área, não bilinear, que pula pixel e serrilha justo numa
+figura que vai pra artigo.
+
 ## Build
 
 Precisa de um compilador com C++20, CMake, Ninja e SDL2:
@@ -228,6 +238,7 @@ Feito:
 - [x] mapa escalar e de rótulo na tela, com colormap
 - [x] exportar estágio: PNG, JPEG, BMP, TGA, Netpbm, PFM, CSV, NPY
 - [x] salvar e carregar projeto, com vários abertos em abas
+- [x] exportar o pipeline como figura, com legenda e fundo transparente
 
 Falta:
 
