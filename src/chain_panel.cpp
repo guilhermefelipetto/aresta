@@ -327,17 +327,24 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             // rouba clique do Selectable que está embaixo. Abaixo de 0.05 ms
             // não aparece, senão a cadeia vira parede de "0.0 ms" sem dizer
             // nada, e o número deixa de chamar atenção justo onde ele importa.
-            if (stage.ms >= 0.05) {
-                char tempo[32];
+            char tempo[32] = {};
+            bool tempo_pendente = stage.ms >= 0.05;
+            if (tempo_pendente) {
                 std::snprintf(tempo, sizeof(tempo), "%.1f ms", stage.ms);
                 const ImVec2 canto_min = ImGui::GetItemRectMin();
                 const ImVec2 canto_max = ImGui::GetItemRectMax();
-                const float largura = ImGui::CalcTextSize(tempo).x;
-                ImGui::GetWindowDrawList()->AddText(
-                    ImVec2(canto_max.x - largura - 4.0f,
-                           canto_min.y + (canto_max.y - canto_min.y
-                                          - ImGui::GetTextLineHeight()) * 0.5f),
-                    ImGui::GetColorU32(ImGuiCol_TextDisabled), tempo);
+                const float x = canto_max.x - ImGui::CalcTextSize(tempo).x - 4.0f;
+
+                // Nome comprido em painel estreito chegaria embaixo do número.
+                // Aí o tempo desce pra linha do resumo, que é curta e quase
+                // sempre tem folga. Texto encavalado não se lê.
+                if (x > canto_min.x + ImGui::CalcTextSize(label).x + 12.0f) {
+                    ImGui::GetWindowDrawList()->AddText(
+                        ImVec2(x, canto_min.y + (canto_max.y - canto_min.y
+                                                 - ImGui::GetTextLineHeight()) * 0.5f),
+                        ImGui::GetColorU32(ImGuiCol_TextDisabled), tempo);
+                    tempo_pendente = false;
+                }
             }
 
             ImGui::SameLine();
@@ -369,7 +376,15 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
             }
 
             const std::string resumo = stage_summary(stage.params);
-            if (!resumo.empty()) {
+            if (tempo_pendente && !resumo.empty()) {
+                apoio(resumo.c_str());
+                const ImVec2 canto_min = ImGui::GetItemRectMin();
+                ImGui::GetWindowDrawList()->AddText(
+                    ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x
+                               - ImGui::CalcTextSize(tempo).x - 4.0f,
+                           canto_min.y),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled), tempo);
+            } else if (!resumo.empty()) {
                 apoio(resumo.c_str());
             }
 
