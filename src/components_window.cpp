@@ -6,7 +6,10 @@
 
 #include <imgui.h>
 
+#include <fstream>
+
 #include "app.h"
+#include "dialog.h"
 #include "chain.h"
 
 namespace {
@@ -16,6 +19,7 @@ namespace {
 void recompute(ComponentsWindow& window, App& app) {
     window.all.clear();
     window.kept.clear();
+    window.shapes.clear();
 
     const int index = app.chain.index_of(window.editing);
     if (index < 0) {
@@ -36,6 +40,11 @@ void recompute(ComponentsWindow& window, App& app) {
 
     label_and_filter(entrada.label.view(), adjacency_by_radius(op->radius), op->filter,
                      &window.all, &window.kept);
+
+    const Value& saida = app.chain.outputs[static_cast<std::size_t>(index)];
+    if (!saida.empty() && saida.kind == ValueKind::Label) {
+        window.shapes = describe_regions(saida.label.view());
+    }
 }
 
 }  // namespace
@@ -152,6 +161,58 @@ void draw_components_window(ComponentsWindow& window, App& app) {
 
     ImGui::SameLine();
 
+    // Tudo que é da direita mora num filho só, senão o SameLine vale pro
+    // primeiro widget e a tabela desce pra debaixo dos filtros.
+    ImGui::BeginChild("direita", ImVec2(0.0f, 0.0f));
+    ImGui::Checkbox("descritores", &window.show_descriptors);
+    if (window.show_descriptors) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Perímetro sai do código de cadeia: passo reto vale 1, diagonal vale raiz de 2.\n"
+                "Circularidade acima de 1 aparece em amarelo: a região é pequena demais pro\n"
+                "perímetro digital valer, não é forma mais redonda que um círculo.");
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("copiar CSV")) {
+        ImGui::SetClipboardText(shapes_to_csv(window.shapes).c_str());
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("salvar CSV...")) {
+        std::string escolhido;
+        if (pick_save_file("Salvar descritores", downloads_folder() + "/descritores.csv",
+                           {{"CSV", {"*.csv"}}}, &escolhido)
+            == PickResult::Chose) {
+            std::ofstream saida(escolhido);
+            saida << shapes_to_csv(window.shapes);
+        }
+    }
+
+    // Quando um rótulo está isolado pelo filtro, vale mostrar tudo dele: numa
+    // tabela os sete momentos de Hu não cabem, e sozinhos eles não dizem nada.
+    if (const Shape* forma = [&]() -> const Shape* {
+            for (std::size_t i = 0; i < window.kept.size(); ++i) {
+                if (window.kept[i].label == op->filter.only_label && i < window.shapes.size()) {
+                    return &window.shapes[i];
+                }
+            }
+            return nullptr;
+        }()) {
+        ImGui::Separator();
+        ImGui::Text("rótulo %d", op->filter.only_label);
+        ImGui::SameLine();
+        ImGui::TextDisabled("centro (%.1f, %.1f), caixa %dx%d, extensão %.3f", forma->cx,
+                            forma->cy, forma->x1 - forma->x0 + 1, forma->y1 - forma->y0 + 1,
+                            forma->extent);
+        ImGui::TextDisabled("eixos %.1f e %.1f, casco %.0f px", forma->major, forma->minor,
+                            forma->hull_area);
+        ImGui::TextDisabled("hu %.4g %.4g %.4g %.4g %.4g %.4g %.4g", forma->hu[0], forma->hu[1],
+                            forma->hu[2], forma->hu[3], forma->hu[4], forma->hu[5], forma->hu[6]);
+        ImGui::Separator();
+    }
+
     ImGui::BeginChild("lista", ImVec2(0.0f, 0.0f));
     {
         std::unordered_map<int, int> novo;
@@ -163,14 +224,27 @@ void draw_components_window(ComponentsWindow& window, App& app) {
         std::sort(ordenadas.begin(), ordenadas.end(),
                   [](const Region& a, const Region& b) { return a.area > b.area; });
 
-        if (ImGui::BeginTable("componentes", 4,
+        const auto forma_de = [&window](int novo_rotulo) -> const Shape* {
+            const std::size_t i = static_cast<std::size_t>(novo_rotulo) - 1;
+            return (novo_rotulo > 0 && i < window.shapes.size()) ? &window.shapes[i] : nullptr;
+        };
+
+        const int colunas = window.show_descriptors ? 9 : 4;
+        if (ImGui::BeginTable("componentes", colunas,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                  ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupScrollFreeze(0, 1);
+                                  ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX)) {
+            ImGui::TableSetupScrollFreeze(1, 1);
             ImGui::TableSetupColumn("orig");
             ImGui::TableSetupColumn("novo");
             ImGui::TableSetupColumn("área");
             ImGui::TableSetupColumn("borda");
+            if (window.show_descriptors) {
+                ImGui::TableSetupColumn("perím");
+                ImGui::TableSetupColumn("circ");
+                ImGui::TableSetupColumn("solidez");
+                ImGui::TableSetupColumn("excentr");
+                ImGui::TableSetupColumn("ângulo");
+            }
             ImGui::TableHeadersRow();
 
             for (const Region& region : ordenadas) {
@@ -200,11 +274,39 @@ void draw_components_window(ComponentsWindow& window, App& app) {
                 ImGui::TableNextColumn();
                 ImGui::TextDisabled("%s", region.touches_border ? "sim" : "");
 
+                if (window.show_descriptors) {
+                    const Shape* forma = sobrou ? forma_de(found->second) : nullptr;
+                    for (int k = 0; k < 5; ++k) {
+                        ImGui::TableNextColumn();
+                        if (!forma) {
+                            ImGui::TextDisabled("");
+                            continue;
+                        }
+                        switch (k) {
+                            case 0: ImGui::Text("%.1f", forma->perimeter); break;
+                            case 1:
+                                // Acima de 1 é impossível numa forma de verdade:
+                                // a região é pequena demais pro perímetro valer.
+                                if (forma->circularity > 1.0) {
+                                    ImGui::TextColored(ImVec4(0.85f, 0.7f, 0.4f, 1.0f), "%.3f",
+                                                       forma->circularity);
+                                } else {
+                                    ImGui::Text("%.3f", forma->circularity);
+                                }
+                                break;
+                            case 2: ImGui::Text("%.3f", forma->solidity); break;
+                            case 3: ImGui::Text("%.3f", forma->eccentricity); break;
+                            case 4: ImGui::Text("%.1f", forma->orientation); break;
+                        }
+                    }
+                }
+
                 ImGui::PopID();
             }
             ImGui::EndTable();
         }
     }
+    ImGui::EndChild();
     ImGui::EndChild();
 
     if (changed) {

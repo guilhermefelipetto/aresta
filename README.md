@@ -145,6 +145,35 @@ argumento espalha aquilo. A local escapa disso dando mapeamentos diferentes em
 lugares diferentes. O estágio `equalizar` faz o mesmo aviso a partir de um
 quarto.
 
+## Componentes e descritores
+
+`Ferramentas > Componentes` lista as regiões do estágio, deixa filtrar por área
+ou isolar um rótulo, e mede cada uma. Com `descritores` ligado entram caixa,
+centroide, perímetro, circularidade, extensão, solidez, eixos da elipse
+equivalente, orientação, excentricidade e os sete invariantes de Hu. Sai em CSV
+pra copiar ou salvar.
+
+O perímetro vem do código de cadeia de oito direções: passo reto vale 1,
+diagonal vale raiz de 2. Contar pixel de borda daria um número maior que o
+perímetro de verdade.
+
+A fronteira sai pelo seguimento de Moore com o critério de parada de Jacob:
+voltar ao primeiro pixel não basta, porque num istmo de um pixel a volta passa
+duas vezes pelo mesmo lugar. O que fecha é repetir o primeiro passo.
+
+A região é união de quadrados unitários, então o casco convexo dela é o casco
+dos cantos dos pixels, não dos centros. Sobre os centros, o casco de um quadrado
+3x3 mediria 4 e a solidez daria 2.25. Retângulo alinhado dá solidez 1 exata, e
+um disco digital dá 0.968, porque a escada da borda deixa mesmo um pedaço de
+fora. O `scikit-image` usa outra convenção e chega em 0.98.
+
+A circularidade passa de 1 em região de poucos pixels, onde o perímetro digital
+fica curto demais pra área. A tabela mostra esse valor em amarelo: não é forma
+mais redonda que um círculo, é região pequena demais pra medida valer.
+
+Área, centroide, eixos, excentricidade, orientação e os momentos de Hu conferem
+com o `regionprops` do `scikit-image`; os Hu batem em dez dígitos.
+
 ## Curva
 
 `Ferramentas > Curva` é a família de transformação de intensidade: negativo,
@@ -247,10 +276,13 @@ Feito:
 - [x] salvar e carregar projeto, com vários abertos em abas
 - [x] exportar o pipeline como figura, com legenda e fundo transparente
 - [x] métricas de erro entre estágios: RMSE, MAE, PSNR, SNR e SSIM
+- [x] descritores de região: fronteira, código de cadeia, casco convexo,
+      momentos de Hu, e o CSV deles
 
 Falta:
 
-- [ ] descritores de região, wavelets, casamento por correlação
+- [ ] descritores de Fourier, textura por co-ocorrência, wavelets,
+      casamento por correlação
 - [ ] pincel de semente, IFT e OIFT sobre a imagem
 - [ ] bancada de grafo: montar, desenhar, rodar algoritmo e exportar
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

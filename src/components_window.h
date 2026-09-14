@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "descriptors.h"
 #include "regions.h"
 
 struct App;
@@ -13,6 +14,12 @@ struct ComponentsWindow {
 
     std::vector<Region> all;
     std::vector<Region> kept;
+
+    // Descritores saem do mapa já rotulado, que é a saída do estágio: a
+    // entrada pode ser binária, e aí tudo seria uma região só. O índice aqui é
+    // o rótulo novo menos um, o mesmo de `kept`.
+    std::vector<Shape> shapes;
+    bool show_descriptors = false;
 
     int seen_revision = -1;
     int seen_stage = -1;
