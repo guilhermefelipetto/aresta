@@ -130,6 +130,144 @@ void apoio(const char* texto) {
     ImGui::PopStyleColor();
 }
 
+// O que a fórmula aceita, junto num lugar só. Quem abre a janela não tem como
+// adivinhar que `step` leva a borda primeiro nem que `v` vale zero aqui, e
+// perguntar isso pro código não é razoável.
+struct Exemplo {
+    const char* formula;
+    const char* explica;
+};
+
+constexpr Exemplo kExemplos[] = {
+    {"gauss(r, a)", "gaussiana de sigma a, que é o borrão de sempre"},
+    {"r <= a", "disco de raio a, média circular em vez de quadrada"},
+    {"gauss(r, a) - gauss(r, b)", "diferença de gaussianas, com a menor que b"},
+    {"(r >= a) * (r <= b)", "anel: multiplicar comparação é o E que não existe"},
+    {"x * gauss(r, a)", "derivada em x já suavizada, Sobel de sigma livre"},
+    {"cos(t * a) * gauss(r, b)", "roseta de a pétalas, porque t é o ângulo"},
+    {"sin(x * a) * gauss(r, b)", "Gabor na mão, com a de frequência"},
+    {"(r < a) * cos(r * b)", "onda radial cortada num disco"},
+    {"sign(x) * (abs(x) <= a)", "Prewitt esticado pra largura a"},
+    {"if(x * y > 0, a, -a)", "tabuleiro por quadrante"},
+    {"(x + y) % 2 * a", "xadrez de um pixel"},
+    {"1 / (1 + r * a)", "queda suave sem cauda gaussiana"},
+};
+
+// Devolve a fórmula que a pessoa clicou, ou nullptr.
+const char* draw_formula_help() {
+    const char* escolhido = nullptr;
+
+    if (ImGui::SmallButton("i")) {
+        ImGui::OpenPopup("ajuda da fórmula");
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("o que a fórmula aceita, e exemplos pra clicar");
+    }
+
+    if (!ImGui::BeginPopup("ajuda da fórmula")) {
+        return nullptr;
+    }
+
+    // Popup se redimensiona pelo conteúdo, e texto que quebra linha se
+    // redimensiona pela janela: um esperando o outro, a largura colapsa e o
+    // texto sai uma letra por linha. A largura tem que vir de fora.
+    const float largura = 680.0f;
+    ImGui::PushTextWrapPos(largura);
+
+    ImGui::TextUnformatted(
+        "A fórmula é avaliada uma vez por coeficiente, e o que muda de uma célula "
+        "pra outra são as variáveis de posição. O tamanho da matriz não sai daqui: "
+        "escolha largura e altura antes, ali em cima.");
+    ImGui::Spacing();
+
+    const auto nota = [](const char* texto) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextUnformatted(texto);
+        ImGui::PopStyleColor();
+    };
+    const auto tabela = [largura](const char* id, float primeira) {
+        if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp,
+                               ImVec2(largura, 0.0f))) {
+            return false;
+        }
+        ImGui::TableSetupColumn("nome", ImGuiTableColumnFlags_WidthFixed, primeira);
+        ImGui::TableSetupColumn("texto", ImGuiTableColumnFlags_WidthStretch);
+        return true;
+    };
+    const auto linha = [](const char* nome, const char* texto) {
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(nome);
+        ImGui::TableNextColumn();
+        ImGui::TextWrapped("%s", texto);
+    };
+
+    if (ImGui::CollapsingHeader("Variáveis", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (tabela("vars", 70.0f)) {
+            linha("x, y", "deslocamento a partir do centro. Num 5x5 vão de -2 a 2, e y cresce pra baixo");
+            linha("r", "distância até o centro, hypot(x, y)");
+            linha("t", "ângulo em radianos, atan2(y, x)");
+            linha("w, h", "largura e altura do kernel");
+            linha("a, b, c", "os três sliders logo abaixo do campo");
+            linha("v", "o valor do pixel. Só existe na janela da Curva; aqui vale zero sempre");
+            ImGui::EndTable();
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Operadores", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (tabela("ops", 130.0f)) {
+            linha("+ - * /", "o de sempre. Dividir por zero dá zero, não infinito");
+            linha("%", "resto, que aceita fracionário");
+            linha("^", "potência, da direita pra esquerda: 2^3^2 é 2^9");
+            linha("< > <= >= == !=", "devolvem 1 ou 0, então dá pra multiplicar por eles");
+            linha("pi, e", "as duas constantes");
+            ImGui::EndTable();
+        }
+        nota("Não existe 'e' lógico nem 'ou'. Como comparação vira 1 ou 0, "
+             "multiplicar faz o E e max faz o OU.");
+    }
+
+    if (ImGui::CollapsingHeader("Funções", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextUnformatted("sin  cos  tan  asin  acos  atan  atan2  exp  log  log2  log10  "
+                               "sqrt  abs  floor  ceil  round  sign  min  max  pow  hypot");
+        ImGui::Spacing();
+        nota("As que têm assinatura que ninguém adivinha:");
+        if (tabela("fns", 130.0f)) {
+            linha("gauss(a, b)", "exp(-a² / 2b²). Então gauss(r, a) é gaussiana de sigma a");
+            linha("step(a, b)", "1 quando b >= a. A borda vem primeiro, o valor depois");
+            linha("clamp(a, b, c)", "valor, piso, teto");
+            linha("if(a, b, c)", "b quando a não é zero, senão c");
+            ImGui::EndTable();
+        }
+        nota("log e sqrt devolvem zero pra argumento não positivo, e resultado "
+             "infinito ou NaN vira zero.");
+    }
+
+    if (ImGui::CollapsingHeader("Exemplos", ImGuiTreeNodeFlags_DefaultOpen)) {
+        nota("Clique pra jogar no campo.");
+        if (tabela("exemplos", 250.0f)) {
+            for (const Exemplo& exemplo : kExemplos) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                if (ImGui::Selectable(exemplo.formula)) {
+                    escolhido = exemplo.formula;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TableNextColumn();
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                ImGui::TextWrapped("%s", exemplo.explica);
+                ImGui::PopStyleColor();
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    ImGui::PopTextWrapPos();
+    ImGui::EndPopup();
+    return escolhido;
+}
+
 const char* border_hint(Border border) {
     switch (border) {
         case Border::Zero: return "fora da imagem vale zero, então a borda escurece";
@@ -426,9 +564,16 @@ void draw_kernel_window(KernelWindow& window, KernelLibrary& library, App& app) 
         if (ImGui::CollapsingHeader("Fórmula")) {
             ImGui::TextDisabled("x e y contam do centro, r e t são polares,");
             ImGui::TextDisabled("a, b e c são os parâmetros abaixo.");
+            ImGui::SameLine();
+            const char* exemplo = draw_formula_help();
+
             ImGui::SetNextItemWidth(-1.0f);
             bool refill = ImGui::InputText("##formula", window.expression,
                                            sizeof(window.expression));
+            if (exemplo) {
+                std::snprintf(window.expression, sizeof(window.expression), "%s", exemplo);
+                refill = true;
+            }
             refill |= ImGui::SliderFloat("a", &window.pa, -8.0f, 8.0f, "%.3f");
             refill |= ImGui::SliderFloat("b", &window.pb, -8.0f, 8.0f, "%.3f");
             refill |= ImGui::SliderFloat("c", &window.pc, -8.0f, 8.0f, "%.3f");
