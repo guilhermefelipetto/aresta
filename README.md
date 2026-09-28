@@ -79,6 +79,7 @@ quando a troca faria alguém depender de quem vem depois.
 | Cor | canal em RGB, HSV, HSI, Lab, YCbCr e CMY, composição, gradiente vetorial, distância a uma cor, pseudo-cor |
 | Binário | limiar (absoluto, fração ou nível, com Otsu), limiar local (média, gaussiana, Sauvola), multi-Otsu, Canny, zero-crossings do LoG, Hough para retas e círculos, morfologia, hit-or-miss, afinamento, preencher buracos, reconstrução geodésica, componentes conexas, transformada de distância |
 | Segmentação | mínimos regionais com h, watershed por marcadores |
+| Descrição | contorno reconstruído por descritores de Fourier |
 | Geometria | redimensionar, girar, recortar, espelhar, quantizar |
 | Entre estágios | combinar (soma, subtração, diferença absoluta, produto, divisão, mín, máx, média), métricas (RMSE, MAE, PSNR, SNR, SSIM), overlay, ruído |
 
@@ -206,6 +207,27 @@ mais redonda que um círculo, é região pequena demais pra medida valer.
 Área, centroide, eixos, excentricidade, orientação e os momentos de Hu conferem
 com o `regionprops` do `scikit-image`; os Hu batem em dez dígitos.
 
+### Descritores de Fourier
+
+A fronteira vira uma sequência complexa, `x + jy`, e a DFT dela dá os
+coeficientes `a(u)`. Tirar o `a(0)` tira a posição, dividir pelo `|a(1)|` tira
+a escala, e ficar só com o módulo tira rotação e ponto de partida, que viram
+fase. Sobram oito números por região no CSV: `|a(u)| / |a(1)|` pra `u` em -1,
+2, -2, 3, -3, 4, -4 e 5, contados no sentido em que a volta anda. O primeiro é
+zero num círculo e cresce conforme a forma alonga. No quadrado o `-3` sai 1/9,
+que é o valor da série de Fourier do contorno de um quadrado.
+
+Antes da DFT a volta é reamostrada por comprimento de arco. A volta de Moore
+anda um pixel por passo, mas passo diagonal mede raiz de 2, e sem igualar a
+mesma elipse girada de 37 graus muda o descritor em 0.045. Reamostrada, em
+0.003.
+
+O estágio `contorno de Fourier` redesenha cada região com só os P coeficientes
+de frequência mais baixa. Com 2 sobra centroide e um círculo, por volta de 20
+a forma já é reconhecível, e com todos o contorno volta pixel a pixel. Esse
+aqui usa a volta crua, como o livro, justamente pra fechar exato quando P
+chega no tamanho dela.
+
 ## Curva
 
 `Ferramentas > Curva` é a família de transformação de intensidade: negativo,
@@ -311,11 +333,11 @@ Feito:
 - [x] métricas de erro entre estágios: RMSE, MAE, PSNR, SNR e SSIM
 - [x] descritores de região: fronteira, código de cadeia, casco convexo,
       momentos de Hu, e o CSV deles
+- [x] descritores de Fourier, com o contorno reconstruído por P coeficientes
 
 Falta:
 
-- [ ] descritores de Fourier, textura por co-ocorrência, wavelets,
-      casamento por correlação
+- [ ] textura por co-ocorrência, wavelets, casamento por correlação
 - [ ] pincel de semente, IFT e OIFT sobre a imagem
 - [ ] bancada de grafo: montar, desenhar, rodar algoritmo e exportar
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

@@ -130,6 +130,12 @@ struct WatershedOp {
     float radius = 1.5f;
     bool lines = true;
 };
+// Contorno redesenhado com poucos coeficientes de Fourier. Com 2 sobra o
+// centroide e um círculo; o detalhe volta aos poucos conforme sobe.
+struct FourierOp {
+    int coefficients = 16;
+    bool fill = false;
+};
 struct MinimaOp {
     float h = 0.0f;
     bool h_absolute = false;
@@ -247,7 +253,7 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
                               LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
                               HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp,
-                              MinimaOp,
+                              MinimaOp, FourierOp,
                               ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp,
                               MetricsOp>;
 

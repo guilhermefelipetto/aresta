@@ -1,5 +1,6 @@
 #pragma once
 
+#include <complex>
 #include <cstdint>
 #include <utility>
 #include <string>
@@ -71,7 +72,32 @@ struct Shape {
     // Guardados crus; quem mostra costuma usar o log do módulo, porque eles
     // variam por ordens de grandeza.
     double hu[7] = {};
+
+    // Descritores de Fourier da fronteira, já sem posição, escala, rotação e
+    // ponto de partida: o módulo de cada coeficiente dividido pelo de a(1). O
+    // a(1) é o círculo que a volta percorre, e os outros dizem quanto a forma
+    // se afasta dele. A ordem é -1, 2, -2, 3, -3, 4, -4, 5, contada no sentido
+    // em que a volta anda, e o primeiro já diz o quanto a forma é elipse.
+    //
+    // Saem da volta reamostrada por comprimento de arco, não dos pixels
+    // crus: passo diagonal mede raiz de 2, e sem igualar a amostragem a mesma
+    // forma girada dá outro número.
+    double fourier[8] = {};
 };
+
+// Coeficientes a(u) = soma de s(k) e^(-j2pi uk/K), com s(k) = x + jy, pra u de
+// `lo` a `hi`. Direto pela soma, sem FFT: fronteira tem umas centenas de
+// pontos, quase nunca potência de dois, e preencher até a próxima distorceria
+// o contorno. Pedir só os coeficientes usados custa O(K por coeficiente).
+std::vector<std::complex<double>> fourier_coefficients(const std::vector<Point>& boundary, int lo,
+                                                       int hi);
+
+// Cada região redesenhada com os `coefficients` coeficientes de frequência mais
+// baixa, contando o a(0), que é o centroide da volta. Com poucos sobra uma
+// elipse, e cada um a mais devolve um pouco do detalhe. Sai o contorno, ou a
+// região preenchida, com o mesmo rótulo de entrada.
+Map<int32_t> fourier_approximation(MapView<int32_t> labels, int coefficients, bool fill,
+                                   int* regions, int* longest);
 
 std::vector<Shape> describe_regions(MapView<int32_t> labels);
 

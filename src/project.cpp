@@ -65,6 +65,7 @@ namespace {
     X(HoughCirclesOp, "hough-circulos")           \
     X(WatershedOp, "watershed")                   \
     X(MinimaOp, "minimos-regionais")              \
+    X(FourierOp, "contorno-fourier")              \
     X(ResizeOp, "redimensionar")                  \
     X(RotateOp, "girar")                          \
     X(CropOp, "recortar")                         \
@@ -435,6 +436,10 @@ template <class V> void campos(HoughCirclesOp& op, V& v) {
 template <class V> void campos(WatershedOp& op, V& v) {
     v.campo("raio", op.radius);
     v.campo("linhas", op.lines);
+}
+template <class V> void campos(FourierOp& op, V& v) {
+    v.campo("coeficientes", op.coefficients);
+    v.campo("preencher", op.fill);
 }
 template <class V> void campos(MinimaOp& op, V& v) {
     v.campo("h", op.h);

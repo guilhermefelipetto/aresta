@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "convolve.h"
+#include "descriptors.h"
 #include "histogram.h"
 #include "morphology.h"
 #include "ops.h"
@@ -319,6 +320,18 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return make_label(hough_circles(in[0]->label.view(), op->min_radius, op->max_radius,
                                         op->step, op->threshold, op->max_circles));
     }
+    if (const auto* op = std::get_if<FourierOp>(&params)) {
+        int regioes = 0;
+        int maior = 0;
+        Map<int32_t> saida = fourier_approximation(in[0]->label.view(), op->coefficients,
+                                                   op->fill, &regioes, &maior);
+        char aviso[160];
+        std::snprintf(aviso, sizeof(aviso),
+                      "%d regiões, a maior volta tem %d pontos%s", regioes, maior,
+                      op->coefficients >= maior && maior > 0 ? ", então nada foi cortado" : "");
+        *note = aviso;
+        return make_label(std::move(saida));
+    }
     if (const auto* op = std::get_if<MinimaOp>(&params)) {
         int quantos = 0;
         Map<int32_t> saida = regional_minima(in[0]->scalar.view(),
@@ -555,6 +568,8 @@ OpInfo op_info(const OpParams& params) {
                 return {"watershed", 3,
                         {ValueKind::Scalar, ValueKind::Label, ValueKind::Label},
                         ValueKind::Label, Poly::None, 2};
+            } else if constexpr (std::is_same_v<T, FourierOp>) {
+                return {"contorno de Fourier", 1, {ValueKind::Label}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, MinimaOp>) {
                 return {"mínimos regionais", 1, {ValueKind::Scalar}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, ResizeOp>) {
@@ -1093,6 +1108,9 @@ std::string stage_summary(const OpParams& params) {
         }
     } else if (const auto* op = std::get_if<CurveOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s   a=%.3f b=%.3f", op->expression, op->a, op->b);
+    } else if (const auto* op = std::get_if<FourierOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%d coeficientes%s", op->coefficients,
+                      op->fill ? ", preenchido" : "");
     } else if (const auto* op = std::get_if<MinimaOp>(&params)) {
         if (op->h <= 0.0f) {
             std::snprintf(buffer, sizeof(buffer), "todos, raio %.2f", op->radius);

@@ -210,6 +210,15 @@ void draw_components_window(ComponentsWindow& window, App& app) {
                             forma->hull_area);
         ImGui::TextDisabled("hu %.4g %.4g %.4g %.4g %.4g %.4g %.4g", forma->hu[0], forma->hu[1],
                             forma->hu[2], forma->hu[3], forma->hu[4], forma->hu[5], forma->hu[6]);
+        ImGui::TextDisabled("fourier %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f", forma->fourier[0],
+                            forma->fourier[1], forma->fourier[2], forma->fourier[3],
+                            forma->fourier[4], forma->fourier[5], forma->fourier[6],
+                            forma->fourier[7]);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("|a(u)| / |a(1)| pra u = -1, 2, -2, 3, -3, 4, -4, 5, no sentido da\n"
+                              "volta. Não mudam com posição, escala, rotação nem ponto de partida.\n"
+                              "O primeiro é zero num círculo e cresce conforme a forma alonga.");
+        }
         ImGui::Separator();
     }
 

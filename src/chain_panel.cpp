@@ -206,6 +206,8 @@ bool draw_operation_items(App& app) {
         {"Segmentação", "mínimos regionais", MinimaOp{}, "um estágio escalar, tipo gradiente"},
         {"Segmentação", "watershed", WatershedOp{}, "um relevo escalar e marcadores"},
 
+        {"Descrição", "contorno de Fourier", FourierOp{}, "um estágio de rótulo, tipo componentes"},
+
         {"Geometria", "redimensionar", ResizeOp{}, "um estágio qualquer"},
         {"Geometria", "girar", RotateOp{}, "um estágio qualquer"},
         {"Geometria", "recortar", CropOp{}, "um estágio qualquer"},
@@ -680,6 +682,13 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<WatershedOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 2.5f, "raio %.2f");
                     dirty |= ImGui::Checkbox("marcar divisores", &op->lines);
+                } else if (auto* op = std::get_if<FourierOp>(&stage.params)) {
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderInt("##p", &op->coefficients, 1, 256,
+                                              "%d coeficientes", ImGuiSliderFlags_Logarithmic);
+                    apoio("conta o a(0), que é o centroide. Com 2 sobra um círculo, e a "
+                          "partir de uns 20 a forma já é reconhecível");
+                    dirty |= ImGui::Checkbox("preencher", &op->fill);
                 } else if (auto* op = std::get_if<MinimaOp>(&stage.params)) {
                     ImGui::SetNextItemWidth(-1.0f);
                     dirty |= ImGui::DragFloat("##p", &op->h, 0.0002f, 0.0f,

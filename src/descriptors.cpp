@@ -36,6 +36,128 @@ long long cruzado(Point o, Point a, Point b) {
            - static_cast<long long>(a.y - o.y) * (b.x - o.x);
 }
 
+std::vector<std::complex<double>> coeficientes(const std::vector<std::complex<double>>& volta,
+                                               int lo, int hi) {
+    std::vector<std::complex<double>> a;
+    const int K = static_cast<int>(volta.size());
+    if (K == 0 || hi < lo) {
+        return a;
+    }
+    a.reserve(static_cast<std::size_t>(hi - lo + 1));
+    for (int u = lo; u <= hi; ++u) {
+        // O giro de um passo, multiplicado em vez de recalcular seno e
+        // cosseno a cada termo. Em alguns milhares de passos o erro
+        // acumulado fica na casa de 1e-13.
+        const double angulo = -2.0 * std::numbers::pi * u / K;
+        const std::complex<double> passo(std::cos(angulo), std::sin(angulo));
+        std::complex<double> giro(1.0, 0.0);
+        std::complex<double> soma(0.0, 0.0);
+        for (const auto& p : volta) {
+            soma += p * giro;
+            giro *= passo;
+        }
+        a.push_back(soma);
+    }
+    return a;
+}
+
+// A volta de Moore anda um pixel por passo, mas passo diagonal mede raiz de 2.
+// Sem igualar, a mesma forma girada de 45 graus é amostrada com outra
+// densidade, e o descritor que deveria não mudar com rotação muda. Aqui a
+// volta vira N pontos igualmente espaçados pelo comprimento de arco.
+std::vector<std::complex<double>> reamostra(const std::vector<Point>& fronteira, int N) {
+    const std::size_t K = fronteira.size();
+    std::vector<double> acumulado(K + 1, 0.0);
+    for (std::size_t i = 0; i < K; ++i) {
+        const Point& a = fronteira[i];
+        const Point& b = fronteira[(i + 1) % K];
+        acumulado[i + 1] = acumulado[i] + std::hypot(b.x - a.x, b.y - a.y);
+    }
+    const double total = acumulado[K];
+
+    std::vector<std::complex<double>> volta;
+    volta.reserve(static_cast<std::size_t>(N));
+    std::size_t trecho = 0;
+    for (int i = 0; i < N; ++i) {
+        const double alvo = total * i / N;
+        while (trecho + 1 < K && acumulado[trecho + 1] <= alvo) {
+            ++trecho;
+        }
+        const Point& a = fronteira[trecho];
+        const Point& b = fronteira[(trecho + 1) % K];
+        const double comprimento = acumulado[trecho + 1] - acumulado[trecho];
+        const double t = comprimento > 0.0 ? (alvo - acumulado[trecho]) / comprimento : 0.0;
+        volta.emplace_back(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
+    }
+    return volta;
+}
+
+void pinta(MapView<int32_t> out, int x, int y, int32_t label) {
+    if (x >= 0 && y >= 0 && x < out.width && y < out.height) {
+        out.at(x, y) = label;
+    }
+}
+
+void linha(MapView<int32_t> out, Point a, Point b, int32_t label) {
+    const int dx = std::abs(b.x - a.x);
+    const int dy = -std::abs(b.y - a.y);
+    const int sx = a.x < b.x ? 1 : -1;
+    const int sy = a.y < b.y ? 1 : -1;
+    int erro = dx + dy;
+    for (;;) {
+        pinta(out, a.x, a.y, label);
+        if (a.x == b.x && a.y == b.y) {
+            return;
+        }
+        const int e2 = 2 * erro;
+        if (e2 >= dy) {
+            erro += dy;
+            a.x += sx;
+        }
+        if (e2 <= dx) {
+            erro += dx;
+            a.y += sy;
+        }
+    }
+}
+
+// Par ou ímpar por linha, amostrando no centro do pixel, que aqui é a própria
+// coordenada inteira. Contorno que se cruza sai com o miolo do laço vazado, e
+// é o certo: é isso que a curva descreve.
+void preenche(MapView<int32_t> out, const std::vector<std::complex<double>>& poligono,
+              int32_t label) {
+    double y_min = poligono[0].imag();
+    double y_max = y_min;
+    for (const auto& p : poligono) {
+        y_min = std::min(y_min, p.imag());
+        y_max = std::max(y_max, p.imag());
+    }
+    const int y0 = std::max(0, static_cast<int>(std::ceil(y_min)));
+    const int y1 = std::min(out.height - 1, static_cast<int>(std::floor(y_max)));
+
+    std::vector<double> cortes;
+    for (int y = y0; y <= y1; ++y) {
+        cortes.clear();
+        for (std::size_t i = 0; i < poligono.size(); ++i) {
+            const auto& a = poligono[i];
+            const auto& b = poligono[(i + 1) % poligono.size()];
+            const bool cruza = (a.imag() <= y && y < b.imag()) || (b.imag() <= y && y < a.imag());
+            if (cruza) {
+                const double t = (y - a.imag()) / (b.imag() - a.imag());
+                cortes.push_back(a.real() + t * (b.real() - a.real()));
+            }
+        }
+        std::sort(cortes.begin(), cortes.end());
+        for (std::size_t i = 0; i + 1 < cortes.size(); i += 2) {
+            const int xa = std::max(0, static_cast<int>(std::ceil(cortes[i])));
+            const int xb = std::min(out.width - 1, static_cast<int>(std::floor(cortes[i + 1])));
+            for (int x = xa; x <= xb; ++x) {
+                out.at(x, y) = label;
+            }
+        }
+    }
+}
+
 }  // namespace
 
 std::vector<Point> trace_boundary(MapView<int32_t> labels, int32_t label, Point start) {
@@ -316,6 +438,24 @@ std::vector<Shape> describe_regions(MapView<int32_t> labels) {
         s.hull_area = area_casco > 0.0 ? area_casco : n;
         s.solidity = s.hull_area > 0.0 ? n / s.hull_area : 0.0;
 
+        // Tirar o a(0) tira a posição, dividir pelo |a(1)| tira a escala, e
+        // ficar só com o módulo tira rotação e ponto de partida, que viram
+        // fase. Qual dos dois, a(1) ou a(-1), é o dominante depende do
+        // sentido da volta, então o sentido é lido em vez de suposto.
+        if (fronteira.size() >= 3) {
+            const auto a = coeficientes(
+                reamostra(fronteira, static_cast<int>(fronteira.size())), -5, 5);
+            const auto modulo = [&a](int u) { return std::abs(a[static_cast<std::size_t>(u + 5)]); };
+            const int q = modulo(1) >= modulo(-1) ? 1 : -1;
+            const double base = modulo(q);
+            constexpr int kOrdem[8] = {-1, 2, -2, 3, -3, 4, -4, 5};
+            if (base > 0.0) {
+                for (int i = 0; i < 8; ++i) {
+                    s.fourier[i] = modulo(q * kOrdem[i]) / base;
+                }
+            }
+        }
+
         const Momento& mo = mom[rotulo];
         const double mu20 = static_cast<double>(mo.m20) / n;
         const double mu02 = static_cast<double>(mo.m02) / n;
@@ -368,17 +508,121 @@ std::string shapes_to_csv(const std::vector<Shape>& shapes) {
     std::string csv =
         "rotulo,area,toca_borda,x0,y0,x1,y1,cx,cy,perimetro,circularidade,extensao,"
         "area_casco,solidez,eixo_maior,eixo_menor,orientacao,excentricidade,"
-        "hu1,hu2,hu3,hu4,hu5,hu6,hu7\n";
+        "hu1,hu2,hu3,hu4,hu5,hu6,hu7,"
+        "fd_m1,fd_2,fd_m2,fd_3,fd_m3,fd_4,fd_m4,fd_5\n";
     for (const Shape& s : shapes) {
-        char linha[768];
+        char linha[1024];
         std::snprintf(linha, sizeof(linha),
                       "%d,%d,%d,%d,%d,%d,%d,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
-                      "%.6f,%.6f,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n",
+                      "%.6f,%.6f,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,"
+                      "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n",
                       s.label, s.area, s.touches_border ? 1 : 0, s.x0, s.y0, s.x1, s.y1, s.cx,
                       s.cy, s.perimeter, s.circularity, s.extent, s.hull_area, s.solidity,
                       s.major, s.minor, s.orientation, s.eccentricity, s.hu[0], s.hu[1], s.hu[2],
-                      s.hu[3], s.hu[4], s.hu[5], s.hu[6]);
+                      s.hu[3], s.hu[4], s.hu[5], s.hu[6], s.fourier[0], s.fourier[1],
+                      s.fourier[2], s.fourier[3], s.fourier[4], s.fourier[5], s.fourier[6],
+                      s.fourier[7]);
         csv += linha;
     }
     return csv;
+}
+
+std::vector<std::complex<double>> fourier_coefficients(const std::vector<Point>& boundary, int lo,
+                                                       int hi) {
+    std::vector<std::complex<double>> volta;
+    volta.reserve(boundary.size());
+    for (const Point& p : boundary) {
+        volta.emplace_back(p.x, p.y);
+    }
+    return coeficientes(volta, lo, hi);
+}
+
+Map<int32_t> fourier_approximation(MapView<int32_t> labels, int coefficients, bool fill,
+                                   int* regions, int* longest) {
+    Map<int32_t> out(labels.width, labels.height);
+    out.fill(0);
+    int quantas = 0;
+    int maior_volta = 0;
+
+    // O primeiro pixel de cada região em varredura é o começo que o
+    // seguimento de Moore exige.
+    std::vector<Point> inicio;
+    std::vector<unsigned char> visto;
+    for (int y = 0; y < labels.height; ++y) {
+        for (int x = 0; x < labels.width; ++x) {
+            const int32_t rotulo = labels.at(x, y);
+            if (rotulo <= 0) {
+                continue;
+            }
+            if (static_cast<std::size_t>(rotulo) >= visto.size()) {
+                visto.resize(static_cast<std::size_t>(rotulo) + 1, 0);
+                inicio.resize(static_cast<std::size_t>(rotulo) + 1);
+            }
+            if (!visto[rotulo]) {
+                visto[rotulo] = 1;
+                inicio[rotulo] = {x, y};
+            }
+        }
+    }
+
+    const MapView<int32_t> dst = out.view();
+    for (std::size_t rotulo = 1; rotulo < visto.size(); ++rotulo) {
+        if (!visto[rotulo]) {
+            continue;
+        }
+        const int32_t label = static_cast<int32_t>(rotulo);
+        const std::vector<Point> fronteira = trace_boundary(labels, label, inicio[rotulo]);
+        const int K = static_cast<int>(fronteira.size());
+        ++quantas;
+        maior_volta = std::max(maior_volta, K);
+        if (K < 3) {
+            for (const Point& p : fronteira) {
+                pinta(dst, p.x, p.y, label);
+            }
+            continue;
+        }
+
+        // P coeficientes em volta do zero, metade pra cada lado. Com P par um
+        // lado leva um a mais, e tem que ser o lado em que a volta anda: com
+        // P = 2 o que sobra depois do centroide é o círculo, e pegar o a(1)
+        // quando o dominante é o a(-1) desenharia um ponto.
+        const int P = std::clamp(coefficients, 1, K);
+        const auto sentido = fourier_coefficients(fronteira, -1, 1);
+        const bool positivo = std::abs(sentido[2]) >= std::abs(sentido[0]);
+        const int curto = (P - 1) / 2;
+        const int lo = positivo ? -curto : -(P - 1 - curto);
+        const int hi = lo + P - 1;
+        const auto a = fourier_coefficients(fronteira, lo, hi);
+
+        std::vector<std::complex<double>> volta(static_cast<std::size_t>(K));
+        for (int u = lo; u <= hi; ++u) {
+            const double angulo = 2.0 * std::numbers::pi * u / K;
+            const std::complex<double> passo(std::cos(angulo), std::sin(angulo));
+            std::complex<double> giro = a[static_cast<std::size_t>(u - lo)] / static_cast<double>(K);
+            for (int k = 0; k < K; ++k) {
+                volta[static_cast<std::size_t>(k)] += giro;
+                giro *= passo;
+            }
+        }
+
+        if (fill) {
+            preenche(dst, volta, label);
+        }
+        for (int k = 0; k < K; ++k) {
+            const auto& p = volta[static_cast<std::size_t>(k)];
+            const auto& q = volta[static_cast<std::size_t>((k + 1) % K)];
+            linha(dst,
+                  {static_cast<int>(std::lround(p.real())), static_cast<int>(std::lround(p.imag()))},
+                  {static_cast<int>(std::lround(q.real())), static_cast<int>(std::lround(q.imag()))},
+                  label);
+        }
+    }
+
+    if (regions) {
+        *regions = quantas;
+    }
+    if (longest) {
+        *longest = maior_volta;
+    }
+    return out;
 }
