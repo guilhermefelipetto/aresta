@@ -11,6 +11,8 @@
 
 #include "convolve.h"
 #include "kernel.h"
+#include "morphology.h"
+#include "ops.h"
 #include "parallel.h"
 
 namespace {
@@ -502,6 +504,104 @@ Map<int32_t> hough_circles(MapView<int32_t> edges, float min_radius, float max_r
                 out.view().at(x, y) = 1;
             }
         }
+    }
+    return out;
+}
+
+Map<int32_t> regional_minima(MapView<float> relief, const Adjacency& adjacency, float h,
+                             bool h_absolute, int* count) {
+    float lo = 0.0f;
+    float hi = 1.0f;
+    scalar_range(relief, &lo, &hi);
+    const float faixa = (hi > lo) ? (hi - lo) : 1.0f;
+    const float profundidade = std::max(0.0f, h_absolute ? h : h * faixa);
+
+    // Afundar os vales rasos antes de procurar é o que separa "mínimo" de
+    // "qualquer pixel que por acaso é menor que os oito vizinhos". Depois da
+    // reconstrução o que tem menos de `profundidade` virou platô junto com a
+    // borda dele, e deixa de ser mínimo sozinho.
+    Map<float> nivelado;
+    if (profundidade > 0.0f) {
+        Map<float> erguido(relief.width, relief.height);
+        for (int y = 0; y < relief.height; ++y) {
+            const float* origem = relief.row(y);
+            float* destino = erguido.view().row(y);
+            for (int x = 0; x < relief.width; ++x) {
+                destino[x] = origem[x] + profundidade;
+            }
+        }
+        nivelado = reconstruct_by_erosion(erguido.view(), relief, adjacency);
+    }
+    const MapView<float> campo = nivelado.empty() ? relief : nivelado.view();
+
+    Map<int32_t> out(relief.width, relief.height);
+    out.fill(0);
+
+    // Percorre platô por platô. Depois da reconstrução os valores de um platô
+    // são cópias exatas uns dos outros, então comparar float por igualdade
+    // aqui é o certo, e não descuido: não existe um epsilon que separe platô
+    // de rampa suave sem inventar um ou apagar o outro.
+    std::vector<unsigned char> visto(out.count(), 0);
+    std::vector<int> plato;
+    std::vector<int> fila;
+    int rotulo = 0;
+
+    for (int y0 = 0; y0 < campo.height; ++y0) {
+        for (int x0 = 0; x0 < campo.width; ++x0) {
+            const std::size_t inicio = static_cast<std::size_t>(y0) * campo.width + x0;
+            if (visto[inicio]) {
+                continue;
+            }
+
+            const float nivel = campo.at(x0, y0);
+            bool minimo = true;
+            plato.clear();
+            fila.assign(1, static_cast<int>(inicio));
+            visto[inicio] = 1;
+
+            while (!fila.empty()) {
+                const int at = fila.back();
+                fila.pop_back();
+                plato.push_back(at);
+                const int x = at % campo.width;
+                const int y = at / campo.width;
+                for (const Adjacency::Offset& offset : adjacency.offsets) {
+                    const int qx = x + offset.dx;
+                    const int qy = y + offset.dy;
+                    if (qx < 0 || qy < 0 || qx >= campo.width || qy >= campo.height) {
+                        continue;
+                    }
+                    const float vizinho = campo.at(qx, qy);
+                    if (vizinho < nivel) {
+                        // Escapa pra baixo, então o platô inteiro é encosta.
+                        // Continua a varredura mesmo assim, pra marcar todo
+                        // ele como visto de uma vez.
+                        minimo = false;
+                        continue;
+                    }
+                    if (vizinho > nivel) {
+                        continue;
+                    }
+                    const std::size_t qat = static_cast<std::size_t>(qy) * campo.width + qx;
+                    if (!visto[qat]) {
+                        visto[qat] = 1;
+                        fila.push_back(static_cast<int>(qat));
+                    }
+                }
+            }
+
+            if (!minimo) {
+                continue;
+            }
+            ++rotulo;
+            for (int at : plato) {
+                out.data[static_cast<std::size_t>(at)] = rotulo;
+            }
+        }
+    }
+
+    if (count) {
+        *count = rotulo;
     }
     return out;
 }

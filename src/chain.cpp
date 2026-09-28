@@ -319,10 +319,25 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return make_label(hough_circles(in[0]->label.view(), op->min_radius, op->max_radius,
                                         op->step, op->threshold, op->max_circles));
     }
+    if (const auto* op = std::get_if<MinimaOp>(&params)) {
+        int quantos = 0;
+        Map<int32_t> saida = regional_minima(in[0]->scalar.view(),
+                                             adjacency_by_radius(op->radius), op->h,
+                                             op->h_absolute, &quantos);
+        float lo = 0.0f;
+        float hi = 1.0f;
+        scalar_range(in[0]->scalar.view(), &lo, &hi);
+        char aviso[160];
+        std::snprintf(aviso, sizeof(aviso),
+                      "%d mínimos, afundando %.5f, e o relevo vai de %.4f a %.4f", quantos,
+                      op->h_absolute ? op->h : op->h * ((hi > lo) ? (hi - lo) : 1.0f), lo, hi);
+        *note = aviso;
+        return make_label(std::move(saida));
+    }
     if (const auto* op = std::get_if<WatershedOp>(&params)) {
         Map<int32_t> saida = watershed(in[0]->scalar.view(), in[1]->label.view(),
-                                       in[2]->label.view(), adjacency_by_radius(op->radius),
-                                       op->lines);
+                                       in[2] ? in[2]->label.view() : MapView<int32_t>{},
+                                       adjacency_by_radius(op->radius), op->lines);
         int32_t maior = 0;
         for (std::size_t i = 0; i < saida.count(); ++i) {
             maior = std::max(maior, saida.data[i]);
@@ -539,7 +554,9 @@ OpInfo op_info(const OpParams& params) {
             } else if constexpr (std::is_same_v<T, WatershedOp>) {
                 return {"watershed", 3,
                         {ValueKind::Scalar, ValueKind::Label, ValueKind::Label},
-                        ValueKind::Label};
+                        ValueKind::Label, Poly::None, 2};
+            } else if constexpr (std::is_same_v<T, MinimaOp>) {
+                return {"mínimos regionais", 1, {ValueKind::Scalar}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, ResizeOp>) {
                 return {"redimensionar", 1, {ValueKind::Color}, ValueKind::Color, Poly::Any};
             } else if constexpr (std::is_same_v<T, RotateOp>) {
@@ -675,7 +692,7 @@ int Chain::find_input(const OpInfo& info, int k, int prefer_id, int limit) const
 
 bool Chain::can_add(const OpParams& params) const {
     const OpInfo info = op_info(params);
-    for (int k = 0; k < info.input_count; ++k) {
+    for (int k = 0; k < std::min(info.input_count, info.optional_from); ++k) {
         if (find_input(info, k, -1, static_cast<int>(stages.size())) < 0) {
             return false;
         }
@@ -691,6 +708,11 @@ void Chain::wire_inputs(const OpParams& params_of_info, int prefer_id, int limit
         return;
     }
 
+    // Entrada opcional nunca é ligada sozinha. Ela existe porque desligada é
+    // um comportamento legítimo, e adivinhar aqui entregaria o watershed com a
+    // máscara amarrada nos próprios marcadores.
+    const auto obrigatoria = [&info](int k) { return k < info.optional_from; };
+
     // Entradas que pedem tipos diferentes cada uma acha a sua sozinha.
     bool mesmo_tipo = true;
     for (int k = 1; k < info.input_count && mesmo_tipo; ++k) {
@@ -698,7 +720,9 @@ void Chain::wire_inputs(const OpParams& params_of_info, int prefer_id, int limit
     }
     if (!mesmo_tipo || info.input_count == 1) {
         for (int k = 0; k < info.input_count; ++k) {
-            (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id, limit);
+            if (obrigatoria(k)) {
+                (*inputs)[static_cast<std::size_t>(k)] = find_input(info, k, prefer_id, limit);
+            }
         }
         return;
     }
@@ -736,6 +760,9 @@ void Chain::wire_inputs(const OpParams& params_of_info, int prefer_id, int limit
 
     const int sobra = static_cast<int>(candidatos.size()) - info.input_count;
     for (int k = 0; k < info.input_count; ++k) {
+        if (!obrigatoria(k)) {
+            continue;
+        }
         const int at = std::max(0, sobra + k);
         (*inputs)[static_cast<std::size_t>(k)] =
             candidatos[static_cast<std::size_t>(std::min(at, static_cast<int>(candidatos.size()) - 1))];
@@ -821,6 +848,9 @@ void Chain::evaluate(const Image& source) {
             const int id = (k < static_cast<int>(stage.inputs.size())) ? stage.inputs[k] : -1;
             const int idx = index_of(id);
             if (idx < 0 || idx >= static_cast<int>(i)) {
+                if (k >= info.optional_from) {
+                    continue;
+                }
                 stage.error = "entrada não ligada";
                 break;
             }
@@ -1063,6 +1093,13 @@ std::string stage_summary(const OpParams& params) {
         }
     } else if (const auto* op = std::get_if<CurveOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s   a=%.3f b=%.3f", op->expression, op->a, op->b);
+    } else if (const auto* op = std::get_if<MinimaOp>(&params)) {
+        if (op->h <= 0.0f) {
+            std::snprintf(buffer, sizeof(buffer), "todos, raio %.2f", op->radius);
+        } else {
+            std::snprintf(buffer, sizeof(buffer), "h %.4f%s, raio %.2f", op->h,
+                          op->h_absolute ? " absoluto" : " da faixa", op->radius);
+        }
     } else if (const auto* op = std::get_if<MetricsOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s%s", metric_map_name(op->map),
                       op->peak_from_reference ? ", pico da referência" : "");

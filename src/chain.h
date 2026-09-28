@@ -130,6 +130,11 @@ struct WatershedOp {
     float radius = 1.5f;
     bool lines = true;
 };
+struct MinimaOp {
+    float h = 0.0f;
+    bool h_absolute = false;
+    float radius = 1.5f;
+};
 
 struct ReconstructOp { float radius = 1.5f; };
 struct FillHolesOp { float radius = 1.5f; };
@@ -242,6 +247,7 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
                               LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
                               HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp,
+                              MinimaOp,
                               ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp,
                               MetricsOp>;
 
@@ -273,6 +279,12 @@ struct OpInfo {
     ValueKind inputs[3];
     ValueKind output;
     Poly poly = Poly::None;
+
+    // A partir de qual entrada dá pra deixar desligado. O padrão 3 quer dizer
+    // que todas são obrigatórias. A máscara do watershed é o caso que abriu a
+    // exceção: com ela a água fica presa, sem ela corre pela imagem inteira, e
+    // as duas coisas são o comportamento certo dependendo do relevo.
+    int optional_from = 3;
 };
 
 bool poly_accepts(Poly poly, ValueKind kind);

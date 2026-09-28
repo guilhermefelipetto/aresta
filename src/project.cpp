@@ -64,6 +64,7 @@ namespace {
     X(HoughLinesOp, "hough-retas")                \
     X(HoughCirclesOp, "hough-circulos")           \
     X(WatershedOp, "watershed")                   \
+    X(MinimaOp, "minimos-regionais")              \
     X(ResizeOp, "redimensionar")                  \
     X(RotateOp, "girar")                          \
     X(CropOp, "recortar")                         \
@@ -435,6 +436,11 @@ template <class V> void campos(WatershedOp& op, V& v) {
     v.campo("raio", op.radius);
     v.campo("linhas", op.lines);
 }
+template <class V> void campos(MinimaOp& op, V& v) {
+    v.campo("h", op.h);
+    v.campo("h-absoluto", op.h_absolute);
+    v.campo("raio", op.radius);
+}
 template <class V> void campos(ResizeOp& op, V& v) {
     v.campo("por-fator", op.by_scale);
     v.campo("fator", op.scale);
@@ -509,7 +515,11 @@ std::string project_text(const App& app) {
     for (const Stage& stage : app.chain.stages) {
         texto += "\nestagio " + std::to_string(stage.id) + " " + chave_de(stage.params) + "\n";
         for (int entrada : stage.inputs) {
-            texto += "  de " + std::to_string(entrada) + "\n";
+            // Entrada opcional desligada vai por extenso, e não como -1: a
+            // linha ocupa a posição do slot de qualquer jeito, e quem abrir o
+            // arquivo num editor lê o que está acontecendo.
+            texto += "  de " + (entrada >= 0 ? std::to_string(entrada) : std::string("nenhuma")) +
+                     "\n";
         }
         texto += std::string("  ativo ") + (stage.enabled ? "1" : "0") + "\n";
 
@@ -608,7 +618,7 @@ ProjectLoad load_project(App& app, const std::string& file) {
 
         Lido& atual = lidos.back();
         if (nome == "de") {
-            atual.entradas.push_back(std::atoi(valor.c_str()));
+            atual.entradas.push_back(valor == "nenhuma" ? -1 : std::atoi(valor.c_str()));
         } else if (nome == "ativo") {
             atual.ativo = (valor == "1");
         } else {

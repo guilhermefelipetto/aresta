@@ -195,7 +195,6 @@ bool draw_operation_items(App& app) {
         {"Binário", "acumulador de Hough", HoughAccumulatorOp{}, "um estágio de rótulo"},
         {"Binário", "retas de Hough", HoughLinesOp{}, "um estágio de rótulo"},
         {"Binário", "círculos de Hough", HoughCirclesOp{}, "um estágio de rótulo"},
-        {"Binário", "watershed", WatershedOp{}, "um relevo escalar, marcadores e máscara"},
         {"Binário", "morfologia", MorphologyOp{}, "um estágio escalar ou de rótulo"},
         {"Binário", "hit-or-miss", HitMissOp{}, "um estágio de rótulo"},
         {"Binário", "afinar", ThinOp{}, "um estágio de rótulo"},
@@ -203,6 +202,9 @@ bool draw_operation_items(App& app) {
         {"Binário", "reconstruir", ReconstructOp{}, "dois estágios de rótulo"},
         {"Binário", "componentes", ComponentsOp{}, "um estágio de rótulo, tipo threshold"},
         {"Binário", "distância", DistanceOp{}, "um estágio de rótulo"},
+
+        {"Segmentação", "mínimos regionais", MinimaOp{}, "um estágio escalar, tipo gradiente"},
+        {"Segmentação", "watershed", WatershedOp{}, "um relevo escalar e marcadores"},
 
         {"Geometria", "redimensionar", ResizeOp{}, "um estágio qualquer"},
         {"Geometria", "girar", RotateOp{}, "um estágio qualquer"},
@@ -395,17 +397,26 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 const int current_idx = app.chain.index_of(current);
                 const char* slot = input_label(stage.params, k);
 
+                const bool opcional = k >= info.optional_from;
+
                 char preview[128];
                 if (current_idx >= 0) {
                     std::snprintf(preview, sizeof(preview), "%s: %d %s", slot, current_idx,
                                   op_info(app.chain.stages[current_idx].params).name);
                 } else {
-                    std::snprintf(preview, sizeof(preview), "%s: (nada)", slot);
+                    std::snprintf(preview, sizeof(preview), "%s: %s", slot,
+                                  opcional ? "(nenhuma)" : "(nada)");
                 }
 
                 ImGui::PushID(k);
                 ImGui::SetNextItemWidth(-1.0f);
                 if (ImGui::BeginCombo("##entrada", preview)) {
+                    if (opcional && ImGui::Selectable("(nenhuma)", current_idx < 0)) {
+                        if (k < static_cast<int>(stage.inputs.size())) {
+                            stage.inputs[k] = -1;
+                            dirty = true;
+                        }
+                    }
                     for (std::size_t j = 0; j < i; ++j) {
                         if (!app.chain.can_feed(info, k, static_cast<int>(j))) {
                             continue;
@@ -669,6 +680,17 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<WatershedOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 2.5f, "raio %.2f");
                     dirty |= ImGui::Checkbox("marcar divisores", &op->lines);
+                } else if (auto* op = std::get_if<MinimaOp>(&stage.params)) {
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::DragFloat("##p", &op->h, 0.0002f, 0.0f,
+                                              op->h_absolute ? 100.0f : 1.0f,
+                                              op->h_absolute ? "h %.4f" : "h %.4f da faixa");
+                    apoio(op->h <= 0.0f
+                              ? "com zero entra todo mínimo, e num gradiente isso é um por chiado"
+                              : "vale mais raso que isso some antes de virar marcador");
+                    dirty |= ImGui::Checkbox("h absoluto", &op->h_absolute);
+                    ImGui::SetNextItemWidth(-1.0f);
+                    dirty |= ImGui::SliderFloat("##r", &op->radius, 1.0f, 2.5f, "raio %.2f");
                 } else if (auto* op = std::get_if<CannyOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->sigma, 0.0f, 5.0f, "sigma %.2f");
                     ImGui::SetNextItemWidth(-1.0f);

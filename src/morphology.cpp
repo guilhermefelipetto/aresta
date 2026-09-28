@@ -377,6 +377,75 @@ Map<int32_t> reconstruct(MapView<int32_t> marker, MapView<int32_t> mask,
     return out;
 }
 
+Map<float> reconstruct_by_erosion(MapView<float> marker, MapView<float> mask,
+                                  const Adjacency& adjacency) {
+    Map<float> out(mask.width, mask.height);
+    const MapView<float> dst = out.view();
+    for (int y = 0; y < mask.height; ++y) {
+        float* row = dst.row(y);
+        for (int x = 0; x < mask.width; ++x) {
+            const int mx = std::min(x, marker.width - 1);
+            const int my = std::min(y, marker.height - 1);
+            row[x] = std::max(marker.at(mx, my), mask.at(x, y));
+        }
+    }
+
+    // Mesma estrutura da reconstrução por dilatação, com mínimo e máximo
+    // trocados de lugar: duas varreduras cobrem quase tudo, e a fila pega o
+    // que precisa voltar.
+    for (int passo = 0; passo < 2; ++passo) {
+        const bool frente = passo == 0;
+        for (int i = 0; i < mask.height; ++i) {
+            const int y = frente ? i : mask.height - 1 - i;
+            for (int j = 0; j < mask.width; ++j) {
+                const int x = frente ? j : mask.width - 1 - j;
+                float pior = dst.at(x, y);
+                for (const Adjacency::Offset& offset : adjacency.offsets) {
+                    const bool causal = frente ? (offset.dy < 0 || (offset.dy == 0 && offset.dx < 0))
+                                               : (offset.dy > 0 || (offset.dy == 0 && offset.dx > 0));
+                    if (!causal) {
+                        continue;
+                    }
+                    const int sx = x + offset.dx;
+                    const int sy = y + offset.dy;
+                    if (sx < 0 || sy < 0 || sx >= mask.width || sy >= mask.height) {
+                        continue;
+                    }
+                    pior = std::min(pior, dst.at(sx, sy));
+                }
+                dst.at(x, y) = std::max(pior, mask.at(x, y));
+            }
+        }
+    }
+
+    std::vector<int> pending;
+    pending.reserve(out.count());
+    for (int y = 0; y < mask.height; ++y) {
+        for (int x = 0; x < mask.width; ++x) {
+            pending.push_back(y * mask.width + x);
+        }
+    }
+    while (!pending.empty()) {
+        const int at = pending.back();
+        pending.pop_back();
+        const int x = at % mask.width;
+        const int y = at / mask.width;
+        for (const Adjacency::Offset& offset : adjacency.offsets) {
+            const int sx = x + offset.dx;
+            const int sy = y + offset.dy;
+            if (sx < 0 || sy < 0 || sx >= mask.width || sy >= mask.height) {
+                continue;
+            }
+            const float alvo = std::max(dst.at(x, y), mask.at(sx, sy));
+            if (dst.at(sx, sy) > alvo) {
+                dst.at(sx, sy) = alvo;
+                pending.push_back(sy * mask.width + sx);
+            }
+        }
+    }
+    return out;
+}
+
 Map<int32_t> fill_holes(MapView<int32_t> labels, const Adjacency& adjacency) {
     // Marcador: só a borda do complemento. Ele cresce pelo fundo conectado à
     // margem, e o fundo que não alcança é buraco.

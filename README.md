@@ -77,7 +77,8 @@ quando a troca faria alguém depender de quem vem depois.
 | Vizinhança | convolução, médias (aritmética, geométrica, harmônica, contra-harmônica), filtro de ordem (mediana, mín, máx, ponto médio, alfa-cortada), redução adaptativa, mediana adaptativa |
 | Frequência | espectro, filtros ideal/Butterworth/gaussiano em passa-baixa, passa-alta, passa-faixa e rejeita-faixa, degradação por movimento e turbulência, filtro inverso, Wiener e mínimos quadrados restritos |
 | Cor | canal em RGB, HSV, HSI, Lab, YCbCr e CMY, composição, gradiente vetorial, distância a uma cor, pseudo-cor |
-| Binário | limiar (absoluto, fração ou nível, com Otsu), limiar local (média, gaussiana, Sauvola), multi-Otsu, Canny, zero-crossings do LoG, Hough para retas e círculos, watershed por marcadores, morfologia, hit-or-miss, afinamento, preencher buracos, reconstrução geodésica, componentes conexas, transformada de distância |
+| Binário | limiar (absoluto, fração ou nível, com Otsu), limiar local (média, gaussiana, Sauvola), multi-Otsu, Canny, zero-crossings do LoG, Hough para retas e círculos, morfologia, hit-or-miss, afinamento, preencher buracos, reconstrução geodésica, componentes conexas, transformada de distância |
+| Segmentação | mínimos regionais com h, watershed por marcadores |
 | Geometria | redimensionar, girar, recortar, espelhar, quantizar |
 | Entre estágios | combinar (soma, subtração, diferença absoluta, produto, divisão, mín, máx, média), métricas (RMSE, MAE, PSNR, SNR, SSIM), overlay, ruído |
 
@@ -144,6 +145,37 @@ dos pixels numa faixa só, como no `a*` da captura, nenhuma função de um
 argumento espalha aquilo. A local escapa disso dando mapeamentos diferentes em
 lugares diferentes. O estágio `equalizar` faz o mesmo aviso a partir de um
 quarto.
+
+## Watershed
+
+O relevo é escalar, então o watershed não precisa de imagem binarizada: o
+caminho clássico é jogar o gradiente nele, que é alto na borda dos objetos e
+baixo no meio deles. O que falta nesse caminho é o marcador, e é pra isso que
+existe `mínimos regionais`.
+
+Um mínimo regional é um platô de onde não dá pra descer, e é o platô inteiro
+que vira marcador, não um pixel escolhido dentro dele. Num gradiente de imagem
+real isso sozinho é inútil: cada chiado do ruído é um mínimo, e um gradiente de
+1024x1024 dá dezenas de milhares deles. É daí que vem a fama de o watershed
+sempre estourar em pedacinho.
+
+O `h` é o conserto. Antes de procurar, os vales com menos de `h` de
+profundidade são aterrados por reconstrução morfológica, e somem junto com a
+borda deles. No mesmo gradiente de 1024x1024, `h` em 10% da faixa leva 56380
+mínimos pra 144. O parâmetro é fração da faixa que o relevo ocupa por padrão,
+e não valor absoluto, senão trocar um gradiente que vai até 0.2 por um canal L
+de Lab que vai até 100 mudaria o significado dele.
+
+A máscara do watershed é opcional, e qual dos dois usar depende do relevo.
+Sobre relevo binarizado ela é quase obrigatória: sem ela a frente escorre pelo
+fundo e uma bacia só toma a imagem inteira. Sobre gradiente em tom contínuo o
+certo é não ter máscara nenhuma, porque ali todo pixel pertence a alguma bacia
+e quem separa as bacias é o próprio relevo.
+
+A inundação é a IFT com custo fmax: cada pixel fica com o marcador cujo caminho
+até ele passa pelo ponto mais baixo possível. A decisão sai na hora de tirar da
+fila, não na de botar, e é isso que faz o divisor sair com um pixel de largura
+em vez de cobrir toda a região de encontro.
 
 ## Componentes e descritores
 
@@ -269,6 +301,7 @@ Feito:
       hit-or-miss
 - [x] Canny, zero-crossings do LoG, limiar local e multi-Otsu
 - [x] Hough para retas e círculos, e watershed por marcadores
+- [x] watershed em tom contínuo, com mínimos regionais e h-mínimos de marcador
 - [x] redimensionar, girar, recortar, espelhar e quantizar, com interpolação
 - [x] aritmética entre estágios, fios da cadeia desenhados, exibição fixável
 - [x] mapa escalar e de rótulo na tela, com colormap

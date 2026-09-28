@@ -37,6 +37,16 @@ Map<float> distance_transform(MapView<int32_t> labels, bool inside,
 Map<int32_t> reconstruct(MapView<int32_t> marker, MapView<int32_t> mask,
                          const Adjacency& adjacency);
 
+// A dual da de cima, em tom contínuo: o marcador começa acima da máscara e
+// desce por erosão geodésica até onde ela deixa. Vale de nível, e não de
+// forma: o que ela preserva são os vales fundos o bastante pra o marcador não
+// conseguir aterrar.
+//
+// É a peça de onde saem os h-mínimos, e por isso ela existe em float e não só
+// em rótulo: afundar vale raso é conta de tom, não de conjunto.
+Map<float> reconstruct_by_erosion(MapView<float> marker, MapView<float> mask,
+                                  const Adjacency& adjacency);
+
 // Reconstrói a partir da borda e inverte: o que sobra são os buracos.
 Map<int32_t> fill_holes(MapView<int32_t> labels, const Adjacency& adjacency);
 

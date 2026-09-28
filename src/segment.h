@@ -43,12 +43,30 @@ Map<int32_t> hough_lines(MapView<int32_t> edges, int thetas, int rhos, float thr
 Map<int32_t> hough_circles(MapView<int32_t> edges, float min_radius, float max_radius, float step,
                            float threshold, int max_circles);
 
+// Mínimos regionais do relevo, um rótulo por mínimo. Um platô é mínimo quando
+// nenhum vizinho de fora dele está mais baixo, e é o platô inteiro que ganha o
+// rótulo, não um pixel escolhido a dedo dentro dele.
+//
+// `h` é a profundidade mínima que um vale precisa ter pra contar. Com zero,
+// todo mínimo entra, e num gradiente de imagem real isso quer dizer um mínimo
+// por chiado: é daí que vem a super-segmentação que dá fama ruim ao
+// watershed. Com `h` maior, os vales rasos são afundados antes por
+// reconstrução e somem, e sobra marcador que vale a pena.
+//
+// `h_absolute` desligado lê `h` como fração da faixa que o relevo ocupa de
+// fato, que é o que sobrevive a trocar um gradiente que vai até 0.2 por um
+// canal L de Lab que vai até 100.
+Map<int32_t> regional_minima(MapView<float> relief, const Adjacency& adjacency, float h,
+                             bool h_absolute, int* count);
+
 // Inundação a partir dos marcadores, na ordem do relevo. É a IFT com custo
 // fmax: cada pixel fica com o marcador cujo caminho até ele passa pelo ponto
 // mais baixo possível.
 //
-// A máscara é o que segura a água. Sem ela a frente escorre pelo fundo e uma
-// bacia só toma a imagem inteira, que é o modo clássico de o watershed
-// decepcionar.
+// A máscara segura a água, e pode vir vazia. Sobre um relevo binarizado ela é
+// quase obrigatória: sem ela a frente escorre pelo fundo e uma bacia só toma a
+// imagem inteira, que é o modo clássico de o watershed decepcionar. Sobre um
+// gradiente em tom contínuo o certo é não ter máscara nenhuma, porque ali todo
+// pixel pertence a alguma bacia e o que separa as bacias é o relevo.
 Map<int32_t> watershed(MapView<float> relief, MapView<int32_t> markers, MapView<int32_t> mask,
                        const Adjacency& adjacency, bool draw_lines);
