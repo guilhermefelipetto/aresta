@@ -149,109 +149,82 @@ quarto.
 
 ## Watershed
 
-O relevo é escalar, então o watershed não precisa de imagem binarizada: o
-caminho clássico é jogar o gradiente nele, que é alto na borda dos objetos e
-baixo no meio deles. O que falta nesse caminho é o marcador, e é pra isso que
-existe `mínimos regionais`.
+O watershed trabalha direto em tons de cinza. O jeito mais comum de usar é
+passar o gradiente da imagem como relevo e gerar os marcadores com o estágio
+`mínimos regionais`, sem precisar binarizar nada.
 
-Um mínimo regional é um platô de onde não dá pra descer, e é o platô inteiro
-que vira marcador, não um pixel escolhido dentro dele. Num gradiente de imagem
-real isso sozinho é inútil: cada chiado do ruído é um mínimo, e um gradiente de
-1024x1024 dá dezenas de milhares deles. É daí que vem a fama de o watershed
-sempre estourar em pedacinho.
+Com `h` em zero, qualquer vale vira marcador, e num gradiente real isso dá um
+mínimo pra cada ruído (dezenas de milhares numa imagem de 1024x1024). É o
+famoso excesso de segmentação do watershed. O `h` resolve isso: vales com menos
+de `h` de profundidade são aterrados antes da busca. Nessa mesma imagem, `h` em
+10% já reduz 56380 mínimos pra 144. Por padrão ele é uma fração da faixa do
+relevo, então o mesmo valor funciona tanto num gradiente que vai até 0.2
+quanto num canal L de Lab que vai até 100.
 
-O `h` é o conserto. Antes de procurar, os vales com menos de `h` de
-profundidade são aterrados por reconstrução morfológica, e somem junto com a
-borda deles. No mesmo gradiente de 1024x1024, `h` em 10% da faixa leva 56380
-mínimos pra 144. O parâmetro é fração da faixa que o relevo ocupa por padrão,
-e não valor absoluto, senão trocar um gradiente que vai até 0.2 por um canal L
-de Lab que vai até 100 mudaria o significado dele.
+A máscara é opcional. Com relevo binarizado vale usar, senão uma bacia escorre
+pelo fundo e toma a imagem toda. Com gradiente em tons de cinza, o normal é
+deixar sem.
 
-A máscara do watershed é opcional, e qual dos dois usar depende do relevo.
-Sobre relevo binarizado ela é quase obrigatória: sem ela a frente escorre pelo
-fundo e uma bacia só toma a imagem inteira. Sobre gradiente em tom contínuo o
-certo é não ter máscara nenhuma, porque ali todo pixel pertence a alguma bacia
-e quem separa as bacias é o próprio relevo.
+Por baixo é uma IFT com custo fmax: cada pixel fica com o marcador que chega
+até ele pelo caminho de crista mais baixa, e em caso de empate ganha quem
+chegou primeiro. A linha divisória sai com um pixel de largura.
 
-A inundação é a IFT com custo fmax: cada pixel fica com o marcador cujo caminho
-até ele passa pelo ponto mais baixo possível, e no empate ganha quem chegou
-primeiro. Com divisor, a decisão sai na hora de tirar da fila, não na de
-botar, e é isso que faz o divisor sair com um pixel de largura em vez de
-cobrir toda a região de encontro.
-
-Tudo isso confere com o `scikit-image`. O watershed bate pixel a pixel com o
-`segmentation.watershed` em relevo aleatório e no gradiente das moedas, com e
-sem divisor, com e sem máscara. A reconstrução por erosão bate exata com a
-`reconstruction`, e os mínimos regionais com a `local_minima`, platô incluído.
-
-Os h-mínimos têm uma diferença de convenção que é de propósito. O `h_minima`
-do `scikit-image` marca só o fundo de cada vale que sobreviveu; aqui sai o
-platô inteiro do vale aterrado, que é o mínimo estendido do Soille (o
-`imextendedmin` do MATLAB) e é o que se usa de marcador. Os vales que
-sobrevivem são os mesmos nos dois, e o platô bate exato com a mesma conta
-montada com peças do `scikit-image`.
-
-Onde o `scikit-image` fica pra trás é no tempo. Lá um pixel entra na fila de
-novo a cada vizinho que o alcança, e com divisor ligado as cópias se somam de
-vizinho em vizinho até a conta explodir: com marcador denso, um relevo de
-128x128 não termina em dois minutos. Aqui cada pixel entra uma vez só, porque
-o primeiro empurrão sempre ganha dos seguintes, e 1024x1024 com 56 mil
-marcadores sai em meio segundo.
+O resultado bate pixel a pixel com o `segmentation.watershed` do
+`scikit-image`, com e sem linha e com e sem máscara. Os mínimos regionais
+batem com o `local_minima`. No `h`, a convenção é a do mínimo estendido (o
+`imextendedmin` do MATLAB), que marca o platô inteiro de cada vale. O
+`h_minima` do `scikit-image` marca só o fundo, mas os vales que sobram são os
+mesmos. Tem uma diferença de desempenho: com linha divisória e muitos
+marcadores o `scikit-image` trava, porque coloca o mesmo pixel na fila várias
+vezes. Aqui cada pixel entra uma vez só, e 1024x1024 com 56 mil marcadores
+roda em meio segundo.
 
 ## Componentes e descritores
 
-`Ferramentas > Componentes` lista as regiões do estágio, deixa filtrar por área
-ou isolar um rótulo, e mede cada uma. Com `descritores` ligado entram caixa,
+`Ferramentas > Componentes` lista as regiões de um estágio, filtra por área,
+isola um rótulo e mede cada região. Ligando `descritores`, aparecem caixa,
 centroide, perímetro, circularidade, extensão, solidez, eixos da elipse
-equivalente, orientação, excentricidade e os sete invariantes de Hu. Sai em CSV
-pra copiar ou salvar.
+equivalente, orientação, excentricidade e os sete momentos de Hu. Dá pra
+copiar ou salvar tudo em CSV.
 
-O perímetro vem do código de cadeia de oito direções: passo reto vale 1,
-diagonal vale raiz de 2. Contar pixel de borda daria um número maior que o
-perímetro de verdade.
+Alguns detalhes que mudam os números:
 
-A fronteira sai pelo seguimento de Moore com o critério de parada de Jacob:
-voltar ao primeiro pixel não basta, porque num istmo de um pixel a volta passa
-duas vezes pelo mesmo lugar. O que fecha é repetir o primeiro passo.
+- O perímetro sai do código de cadeia, com passo reto valendo 1 e diagonal
+  valendo raiz de 2. Contar pixels de borda superestima.
+- A fronteira é traçada pelo seguimento de Moore, que só para quando repete o
+  primeiro passo (critério de Jacob). Parar ao voltar ao pixel inicial falha
+  em regiões com istmo de um pixel.
+- O casco convexo usa os cantos dos pixels, não os centros. Assim um
+  retângulo tem solidez exatamente 1 e um disco digital dá 0.968. O
+  `scikit-image` usa os centros e chega em 0.98.
+- Em regiões muito pequenas a circularidade passa de 1, porque o perímetro
+  digital fica curto demais. A tabela mostra esses casos em amarelo.
 
-A região é união de quadrados unitários, então o casco convexo dela é o casco
-dos cantos dos pixels, não dos centros. Sobre os centros, o casco de um quadrado
-3x3 mediria 4 e a solidez daria 2.25. Retângulo alinhado dá solidez 1 exata, e
-um disco digital dá 0.968, porque a escada da borda deixa mesmo um pedaço de
-fora. O `scikit-image` usa outra convenção e chega em 0.98.
-
-A circularidade passa de 1 em região de poucos pixels, onde o perímetro digital
-fica curto demais pra área. A tabela mostra esse valor em amarelo: não é forma
-mais redonda que um círculo, é região pequena demais pra medida valer.
-
-Área, centroide, eixos, excentricidade, orientação e os momentos de Hu conferem
-com o `regionprops` do `scikit-image`; os Hu batem em dez dígitos.
+Área, centroide, eixos, excentricidade, orientação e Hu batem com o
+`regionprops` do `scikit-image`. Os momentos de Hu batem em dez dígitos.
 
 ### Descritores de Fourier
 
-A fronteira vira uma sequência complexa, `x + jy`, e a DFT dela dá os
-coeficientes `a(u)`. Tirar o `a(0)` tira a posição, dividir pelo `|a(1)|` tira
-a escala, e ficar só com o módulo tira rotação e ponto de partida, que viram
-fase. Sobram oito números por região no CSV: `|a(u)| / |a(1)|` pra `u` em -1,
-2, -2, 3, -3, 4, -4 e 5, contados no sentido em que a volta anda. O primeiro é
-zero num círculo e cresce conforme a forma alonga. No quadrado o `-3` sai 1/9,
-que é o valor da série de Fourier do contorno de um quadrado.
+A fronteira é tratada como uma sequência de números complexos `x + jy`, e a
+DFT dela dá os coeficientes `a(u)`. No CSV entram oito valores por região:
+`|a(u)| / |a(1)|` pra `u` em -1, 2, -2, 3, -3, 4, -4 e 5. Normalizados assim,
+eles não mudam com posição, escala, rotação nem com o ponto onde a volta
+começa. O primeiro vale zero num círculo e cresce à medida que a forma
+alonga. Num quadrado, o de `u = -3` dá 1/9, o valor teórico.
 
-Antes da DFT a volta é reamostrada por comprimento de arco. A volta de Moore
-anda um pixel por passo, mas passo diagonal mede raiz de 2, e sem igualar a
-mesma elipse girada de 37 graus muda o descritor em 0.045. Reamostrada, em
-0.003.
+Antes da DFT a fronteira é reamostrada em passos iguais de comprimento. Sem
+isso, os passos diagonais do Moore deixam a amostragem irregular, e a mesma
+elipse girada 37 graus muda o descritor em 0.045. Com a reamostragem, a
+diferença cai pra 0.003.
 
-O estágio `contorno de Fourier` redesenha cada região com só os P coeficientes
-de frequência mais baixa. Com 2 sobra centroide e um círculo, por volta de 20
-a forma já é reconhecível, e com todos o contorno volta pixel a pixel. Esse
-aqui usa a volta crua, como o livro, justamente pra fechar exato quando P
-chega no tamanho dela.
+O estágio `contorno de Fourier` redesenha cada região usando só os P
+coeficientes de frequência mais baixa. Com 2 sobra um círculo, por volta de 20
+a forma já dá pra reconhecer, e com todos o contorno volta igual ao original.
+Aqui a fronteira não é reamostrada, pra reconstrução completa ser exata.
 
-A fronteira sai na mesma sequência de pontos do `findContours` do OpenCV, os
-coeficientes batem com o `numpy.fft` em 1e-14, e o contorno redesenhado, com
-ou sem preenchimento, bate pixel a pixel com a `ifft` do `numpy` traçada pelo
-`skimage.draw`.
+A fronteira sai igual à do `findContours` do OpenCV, ponto a ponto e na mesma
+ordem. Os coeficientes batem com o `numpy.fft`, e o contorno redesenhado bate
+pixel a pixel com a mesma conta feita em `numpy`.
 
 ## Curva
 
