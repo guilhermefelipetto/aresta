@@ -82,7 +82,7 @@ struct Parser {
 
     Node parse_comparison() {
         Node left = parse_sum();
-        while (left && !error.empty() == false) {
+        while (left && error.empty()) {
             const char* found = nullptr;
             for (const char* op : {"<=", ">=", "==", "!=", "<", ">"}) {
                 if (eat(op)) {

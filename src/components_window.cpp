@@ -279,7 +279,6 @@ void draw_components_window(ComponentsWindow& window, App& app) {
                     for (int k = 0; k < 5; ++k) {
                         ImGui::TableNextColumn();
                         if (!forma) {
-                            ImGui::TextDisabled("");
                             continue;
                         }
                         switch (k) {
