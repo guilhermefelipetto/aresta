@@ -1,4 +1,4 @@
-# aresta
+<p align="center"><img src="imagens/banner.svg" alt="aresta" width="460"></p>
 
 Bancada de processamento de imagem em C++, escrita do zero, para estudo e
 experimentação de algoritmos. Reúne o processamento clássico do livro do
