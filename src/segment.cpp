@@ -608,109 +608,119 @@ Map<int32_t> regional_minima(MapView<float> relief, const Adjacency& adjacency, 
 
 Map<int32_t> watershed(MapView<float> relief, MapView<int32_t> markers, MapView<int32_t> mask,
                        const Adjacency& adjacency, bool draw_lines) {
-    constexpr int32_t divisor = -1;
-
-    Map<int32_t> out(relief.width, relief.height);
+    const int W = relief.width;
+    const int H = relief.height;
+    Map<int32_t> out(W, H);
     out.fill(0);
+    const MapView<int32_t> rotulo = out.view();
 
     struct Frente {
         float custo;
         long long ordem;
         int at;
+        int32_t rotulo;
         bool operator<(const Frente& outro) const {
-            // priority_queue tira o maior, então a comparação vai invertida. A
-            // ordem de entrada desempata, e isso importa: sem ela o resultado
-            // muda conforme a implementação da fila.
+            // priority_queue tira o maior, então a comparação vai invertida. No
+            // empate de custo ganha quem entrou antes: é a regra FIFO da IFT,
+            // que divide um platô disputado ao meio em vez de entregar ele
+            // inteiro pra quem chegou por um lado privilegiado dos offsets.
             return custo > outro.custo || (custo == outro.custo && ordem > outro.ordem);
         }
     };
 
+    // Livre é dentro da máscara e ainda não virou divisor. Divisor sai do jogo
+    // de vez, senão uma frente atravessaria a linha que outra acabou de
+    // marcar.
+    std::vector<unsigned char> livre(out.count(), 1);
+    std::vector<unsigned char> na_fila(out.count(), 0);
+    if (!mask.empty()) {
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                livre[static_cast<std::size_t>(y) * W + x] =
+                    mask.at(std::min(x, mask.width - 1), std::min(y, mask.height - 1)) != 0;
+            }
+        }
+    }
+
     std::priority_queue<Frente> fila;
     long long ordem = 0;
-    std::vector<unsigned char> na_fila(out.count(), 0);
 
-    const auto dentro = [&](int x, int y) {
-        return mask.empty() || mask.at(std::min(x, mask.width - 1),
-                                       std::min(y, mask.height - 1)) != 0;
-    };
+    // Marcador fora da máscara não conta: a máscara diz onde existe imagem
+    // pra segmentar, e um marcador lá fora deixaria uma bacia órfã no fundo.
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const int32_t m = markers.at(std::min(x, markers.width - 1),
+                                         std::min(y, markers.height - 1));
+            const std::size_t at = static_cast<std::size_t>(y) * W + x;
+            if (m > 0 && livre[at]) {
+                rotulo.at(x, y) = m;
+                na_fila[at] = 1;
+                fila.push({relief.at(x, y), ordem++, static_cast<int>(at), m});
+            }
+        }
+    }
 
-    const auto empilhar_vizinhos = [&](int x, int y) {
+    const auto vizinho_de_outro = [&](int x, int y, int32_t meu) {
         for (const Adjacency::Offset& offset : adjacency.offsets) {
             const int qx = x + offset.dx;
             const int qy = y + offset.dy;
-            if (qx < 0 || qy < 0 || qx >= relief.width || qy >= relief.height) {
+            if (qx < 0 || qy < 0 || qx >= W || qy >= H) {
                 continue;
             }
-            const std::size_t at = static_cast<std::size_t>(qy) * relief.width + qx;
-            if (out.view().at(qx, qy) == 0 && !na_fila[at] && dentro(qx, qy)) {
-                na_fila[at] = 1;
-                fila.push({relief.at(qx, qy), ordem++, static_cast<int>(at)});
+            const std::size_t qat = static_cast<std::size_t>(qy) * W + qx;
+            const int32_t outro = rotulo.at(qx, qy);
+            if (livre[qat] && outro > 0 && outro != meu) {
+                return true;
             }
         }
+        return false;
     };
 
-    for (int y = 0; y < relief.height; ++y) {
-        for (int x = 0; x < relief.width; ++x) {
-            const int32_t m = markers.at(std::min(x, markers.width - 1),
-                                         std::min(y, markers.height - 1));
-            if (m > 0) {
-                out.view().at(x, y) = m;
-            }
-        }
-    }
-    for (int y = 0; y < relief.height; ++y) {
-        for (int x = 0; x < relief.width; ++x) {
-            if (out.view().at(x, y) > 0) {
-                empilhar_vizinhos(x, y);
-            }
-        }
-    }
-
-    // Decidir na hora de tirar da fila, e não na de botar: é isso que faz o
-    // divisor sair com um pixel em vez de cobrir toda a região de encontro.
     while (!fila.empty()) {
         const Frente atual = fila.top();
         fila.pop();
-        const int x = atual.at % relief.width;
-        const int y = atual.at / relief.width;
-        if (out.view().at(x, y) != 0) {
-            continue;
+        const int x = atual.at % W;
+        const int y = atual.at / W;
+
+        // Com divisor, o rótulo só pode ser decidido na hora de tirar da fila:
+        // é aí que dá pra ver se já tem vizinho de outra bacia. Decidir na hora
+        // de botar cobriria a região de encontro inteira em vez de um pixel.
+        if (draw_lines) {
+            if (!livre[atual.at] || vizinho_de_outro(x, y, atual.rotulo)) {
+                livre[atual.at] = 0;
+            } else {
+                rotulo.at(x, y) = atual.rotulo;
+            }
         }
 
-        int32_t escolhido = 0;
-        bool conflito = false;
         for (const Adjacency::Offset& offset : adjacency.offsets) {
             const int qx = x + offset.dx;
             const int qy = y + offset.dy;
-            if (qx < 0 || qy < 0 || qx >= relief.width || qy >= relief.height) {
+            if (qx < 0 || qy < 0 || qx >= W || qy >= H) {
                 continue;
             }
-            const int32_t vizinho = out.view().at(qx, qy);
-            if (vizinho <= 0) {
+            const std::size_t qat = static_cast<std::size_t>(qy) * W + qx;
+            // Cada pixel entra na fila uma vez só. A fila sai em custo que
+            // nunca desce, e o custo de um empurrão é o do pai ou mais, então
+            // todo empurrão que viesse depois teria custo igual ou maior e
+            // idade mais nova: nunca sairia antes do primeiro. O watershed do
+            // scikit-image empurra de novo, e com linha ligada as cópias de um
+            // divisor se somam de vizinho em vizinho num platô até a conta
+            // explodir; com marcador denso, 128x128 não termina lá.
+            if (!livre[qat] || na_fila[qat]) {
                 continue;
             }
-            if (escolhido == 0) {
-                escolhido = vizinho;
-            } else if (escolhido != vizinho) {
-                conflito = true;
-                break;
+            na_fila[qat] = 1;
+            // O custo fmax do caminho: o ponto mais alto por onde ele passou. Com
+            // só o relevo do vizinho, uma frente que cruza uma crista e cai num
+            // vale mais baixo passaria na frente de quem tinha direito a ele.
+            const float custo = std::max(atual.custo, relief.at(qx, qy));
+            if (!draw_lines) {
+                // Sem divisor, quem chega primeiro já leva: nenhum caminho
+                // mais barato pode aparecer depois.
+                rotulo.at(qx, qy) = atual.rotulo;
             }
-        }
-
-        if (conflito && draw_lines) {
-            out.view().at(x, y) = divisor;
-            continue;
-        }
-        if (escolhido == 0) {
-            continue;
-        }
-        out.view().at(x, y) = escolhido;
-        empilhar_vizinhos(x, y);
-    }
-
-    for (std::size_t i = 0; i < out.count(); ++i) {
-        if (out.data[i] == divisor) {
-            out.data[i] = 0;
+            fila.push({custo, ordem++, static_cast<int>(qat), atual.rotulo});
         }
     }
     return out;

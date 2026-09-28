@@ -174,9 +174,29 @@ certo é não ter máscara nenhuma, porque ali todo pixel pertence a alguma baci
 e quem separa as bacias é o próprio relevo.
 
 A inundação é a IFT com custo fmax: cada pixel fica com o marcador cujo caminho
-até ele passa pelo ponto mais baixo possível. A decisão sai na hora de tirar da
-fila, não na de botar, e é isso que faz o divisor sair com um pixel de largura
-em vez de cobrir toda a região de encontro.
+até ele passa pelo ponto mais baixo possível, e no empate ganha quem chegou
+primeiro. Com divisor, a decisão sai na hora de tirar da fila, não na de
+botar, e é isso que faz o divisor sair com um pixel de largura em vez de
+cobrir toda a região de encontro.
+
+Tudo isso confere com o `scikit-image`. O watershed bate pixel a pixel com o
+`segmentation.watershed` em relevo aleatório e no gradiente das moedas, com e
+sem divisor, com e sem máscara. A reconstrução por erosão bate exata com a
+`reconstruction`, e os mínimos regionais com a `local_minima`, platô incluído.
+
+Os h-mínimos têm uma diferença de convenção que é de propósito. O `h_minima`
+do `scikit-image` marca só o fundo de cada vale que sobreviveu; aqui sai o
+platô inteiro do vale aterrado, que é o mínimo estendido do Soille (o
+`imextendedmin` do MATLAB) e é o que se usa de marcador. Os vales que
+sobrevivem são os mesmos nos dois, e o platô bate exato com a mesma conta
+montada com peças do `scikit-image`.
+
+Onde o `scikit-image` fica pra trás é no tempo. Lá um pixel entra na fila de
+novo a cada vizinho que o alcança, e com divisor ligado as cópias se somam de
+vizinho em vizinho até a conta explodir: com marcador denso, um relevo de
+128x128 não termina em dois minutos. Aqui cada pixel entra uma vez só, porque
+o primeiro empurrão sempre ganha dos seguintes, e 1024x1024 com 56 mil
+marcadores sai em meio segundo.
 
 ## Componentes e descritores
 
@@ -227,6 +247,11 @@ de frequência mais baixa. Com 2 sobra centroide e um círculo, por volta de 20
 a forma já é reconhecível, e com todos o contorno volta pixel a pixel. Esse
 aqui usa a volta crua, como o livro, justamente pra fechar exato quando P
 chega no tamanho dela.
+
+A fronteira sai na mesma sequência de pontos do `findContours` do OpenCV, os
+coeficientes batem com o `numpy.fft` em 1e-14, e o contorno redesenhado, com
+ou sem preenchimento, bate pixel a pixel com a `ifft` do `numpy` traçada pelo
+`skimage.draw`.
 
 ## Curva
 

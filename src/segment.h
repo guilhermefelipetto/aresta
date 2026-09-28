@@ -67,6 +67,12 @@ Map<int32_t> regional_minima(MapView<float> relief, const Adjacency& adjacency, 
 // quase obrigatória: sem ela a frente escorre pelo fundo e uma bacia só toma a
 // imagem inteira, que é o modo clássico de o watershed decepcionar. Sobre um
 // gradiente em tom contínuo o certo é não ter máscara nenhuma, porque ali todo
-// pixel pertence a alguma bacia e o que separa as bacias é o relevo.
+// pixel pertence a alguma bacia e o que separa as bacias é o relevo. Marcador
+// fora da máscara é ignorado.
+//
+// Confere pixel a pixel com o segmentation.watershed do scikit-image, com e
+// sem linha e com e sem máscara, mas sem herdar o defeito dele: lá um pixel
+// entra na fila várias vezes, e com linha ligada e marcador denso a conta
+// explode.
 Map<int32_t> watershed(MapView<float> relief, MapView<int32_t> markers, MapView<int32_t> mask,
                        const Adjacency& adjacency, bool draw_lines);
