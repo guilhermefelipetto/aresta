@@ -54,6 +54,8 @@ add_executable(aresta
     src/chain_panel.cpp
     src/components_window.cpp
     src/convolve.cpp
+    src/cooccurrence.cpp
+    src/cooccurrence_window.cpp
     src/curve_window.cpp
     src/descriptors.cpp
     src/dialog.cpp

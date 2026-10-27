@@ -79,7 +79,7 @@ quando a troca faria alguém depender de quem vem depois.
 | Cor | canal em RGB, HSV, HSI, Lab, YCbCr e CMY, composição, gradiente vetorial, distância a uma cor, pseudo-cor |
 | Binário | limiar (absoluto, fração ou nível, com Otsu), limiar local (média, gaussiana, Sauvola), multi-Otsu, Canny, zero-crossings do LoG, Hough para retas e círculos, morfologia, hit-or-miss, afinamento, preencher buracos, reconstrução geodésica, componentes conexas, transformada de distância |
 | Segmentação | mínimos regionais com h, watershed por marcadores |
-| Descrição | contorno reconstruído por descritores de Fourier |
+| Descrição | contorno reconstruído por descritores de Fourier, mapa de textura por co-ocorrência |
 | Geometria | redimensionar, girar, recortar, espelhar, quantizar |
 | Entre estágios | combinar (soma, subtração, diferença absoluta, produto, divisão, mín, máx, média), métricas (RMSE, MAE, PSNR, SNR, SSIM), overlay, ruído |
 
@@ -226,6 +226,33 @@ A fronteira sai igual à do `findContours` do OpenCV, ponto a ponto e na mesma
 ordem. Os coeficientes batem com o `numpy.fft`, e o contorno redesenhado bate
 pixel a pixel com a mesma conta feita em `numpy`.
 
+## Co-ocorrência
+
+`Ferramentas > Co-ocorrência` mostra a matriz de co-ocorrência do estágio na
+tela como imagem. A célula (i, j) diz com que frequência um pixel de nível i
+tem, no deslocamento escolhido, um vizinho de nível j. Textura lisa concentra
+tudo na diagonal, e textura áspera espalha pra longe dela. Ao lado ficam as
+medidas de Haralick: contraste, dissimilaridade, homogeneidade, uniformidade,
+energia, correlação, entropia e probabilidade máxima. Passando o mouse em cada
+uma aparece o que ela olha na matriz.
+
+O estágio `textura` calcula uma dessas medidas numa janela em volta de cada
+pixel e devolve um mapa escalar. É o que permite segmentar por textura:
+depois dele dá pra usar limiar, Otsu ou watershed, como em qualquer outro
+mapa. O botão `Mapa de ...` na janela cria esse estágio com as mesmas opções.
+
+A janela desliza atualizando só os pares que entram e saem, e as medidas saem
+de contadores inteiros, sem varrer a matriz a cada pixel. Por isso o tempo não
+depende do número de níveis: em 1024x1024, com janela 15x15, leva uns 150 ms
+por direção, tanto com 16 quanto com 256 níveis.
+
+A diagonal segue o Haralick: distância d anda d linhas e d colunas. O
+`scikit-image` arredonda a distância euclidiana, então pra ele distância 2 na
+diagonal dá o mesmo que distância 1. Pedindo a ele o mesmo deslocamento, a
+matriz bate exata, as medidas batem com o `graycoprops` até 1e-16 e o mapa
+bate pixel a pixel com a janela recortada. A entropia aqui sai em bits; a do
+`scikit-image` sai em nats.
+
 ## Curva
 
 `Ferramentas > Curva` é a família de transformação de intensidade: negativo,
@@ -332,10 +359,11 @@ Feito:
 - [x] descritores de região: fronteira, código de cadeia, casco convexo,
       momentos de Hu, e o CSV deles
 - [x] descritores de Fourier, com o contorno reconstruído por P coeficientes
+- [x] textura por co-ocorrência, com a matriz na tela e o mapa por janela
 
 Falta:
 
-- [ ] textura por co-ocorrência, wavelets, casamento por correlação
+- [ ] wavelets, casamento por correlação
 - [ ] pincel de semente, IFT e OIFT sobre a imagem
 - [ ] bancada de grafo: montar, desenhar, rodar algoritmo e exportar
 - [ ] modo bench: rodar sobre dataset, cronometrar, medir

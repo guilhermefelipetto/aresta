@@ -207,6 +207,7 @@ bool draw_operation_items(App& app) {
         {"Segmentação", "watershed", WatershedOp{}, "um relevo escalar e marcadores"},
 
         {"Descrição", "contorno de Fourier", FourierOp{}, "um estágio de rótulo, tipo componentes"},
+        {"Descrição", "textura (co-ocorrência)", TextureOp{}, "um estágio escalar, tipo canal"},
 
         {"Geometria", "redimensionar", ResizeOp{}, "um estágio qualquer"},
         {"Geometria", "girar", RotateOp{}, "um estágio qualquer"},
@@ -682,6 +683,34 @@ void draw_chain_panel(App& app, bool dirty_from_outside) {
                 } else if (auto* op = std::get_if<WatershedOp>(&stage.params)) {
                     dirty |= ImGui::SliderFloat("##p", &op->radius, 1.0f, 2.5f, "raio %.2f");
                     dirty |= ImGui::Checkbox("marcar divisores", &op->lines);
+                } else if (auto* op = std::get_if<TextureOp>(&stage.params)) {
+                    int medida = static_cast<int>(op->measure);
+                    if (ImGui::Combo("##p", &medida,
+                                     "contraste\0dissimilaridade\0homogeneidade\0uniformidade\0"
+                                     "energia\0correlação\0entropia\0probabilidade máxima\0")) {
+                        op->measure = static_cast<Haralick>(medida);
+                        dirty = true;
+                    }
+                    int direcao = static_cast<int>(op->direction);
+                    ImGui::SetNextItemWidth(-90.0f);
+                    if (ImGui::Combo("direção", &direcao,
+                                     "direita\0abaixo\0diagonal descendo\0diagonal subindo\0"
+                                     "média das quatro\0")) {
+                        op->direction = static_cast<Direction>(direcao);
+                        dirty = true;
+                    }
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::SliderInt("distância", &op->distance, 1, 8);
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::SliderInt("níveis", &op->levels, 2, 256, "%d",
+                                              ImGuiSliderFlags_Logarithmic);
+                    ImGui::SetNextItemWidth(-90.0f);
+                    dirty |= ImGui::SliderInt("raio", &op->radius, 1, 32);
+                    apoio("a janela tem lado 2 x raio + 1. Pequena demais e a medida vira "
+                          "ruído; grande demais e borra a fronteira entre texturas");
+                    dirty |= ImGui::Checkbox("simétrica", &op->symmetric);
+                    ImGui::SameLine();
+                    dirty |= ImGui::Checkbox("faixa fixa 0 a 1", &op->unit_range);
                 } else if (auto* op = std::get_if<FourierOp>(&stage.params)) {
                     ImGui::SetNextItemWidth(-1.0f);
                     dirty |= ImGui::SliderInt("##p", &op->coefficients, 1, 256,

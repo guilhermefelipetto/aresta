@@ -320,6 +320,21 @@ Value apply_op(const OpParams& params, Value* const* in, std::string* note) {
         return make_label(hough_circles(in[0]->label.view(), op->min_radius, op->max_radius,
                                         op->step, op->threshold, op->max_circles));
     }
+    if (const auto* op = std::get_if<TextureOp>(&params)) {
+        float lo = 0.0f;
+        float hi = 1.0f;
+        if (!op->unit_range) {
+            scalar_range(in[0]->scalar.view(), &lo, &hi);
+        }
+        const int niveis = std::clamp(op->levels, 2, 256);
+        const Map<int32_t> q = quantize_levels(in[0]->scalar.view(), lo, hi, niveis);
+        char aviso[160];
+        std::snprintf(aviso, sizeof(aviso), "%d níveis entre %.4f e %.4f, janela %dx%d", niveis,
+                      lo, hi, 2 * op->radius + 1, 2 * op->radius + 1);
+        *note = aviso;
+        return make_scalar(texture_map(q.view(), niveis, op->direction, std::max(1, op->distance),
+                                       op->symmetric, std::max(1, op->radius), op->measure));
+    }
     if (const auto* op = std::get_if<FourierOp>(&params)) {
         int regioes = 0;
         int maior = 0;
@@ -568,6 +583,8 @@ OpInfo op_info(const OpParams& params) {
                 return {"watershed", 3,
                         {ValueKind::Scalar, ValueKind::Label, ValueKind::Label},
                         ValueKind::Label, Poly::None, 2};
+            } else if constexpr (std::is_same_v<T, TextureOp>) {
+                return {"textura", 1, {ValueKind::Scalar}, ValueKind::Scalar};
             } else if constexpr (std::is_same_v<T, FourierOp>) {
                 return {"contorno de Fourier", 1, {ValueKind::Label}, ValueKind::Label};
             } else if constexpr (std::is_same_v<T, MinimaOp>) {
@@ -1108,6 +1125,10 @@ std::string stage_summary(const OpParams& params) {
         }
     } else if (const auto* op = std::get_if<CurveOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%s   a=%.3f b=%.3f", op->expression, op->a, op->b);
+    } else if (const auto* op = std::get_if<TextureOp>(&params)) {
+        std::snprintf(buffer, sizeof(buffer), "%s, %s %d, %d níveis, janela %d",
+                      haralick_name(op->measure), direction_name(op->direction), op->distance,
+                      op->levels, 2 * op->radius + 1);
     } else if (const auto* op = std::get_if<FourierOp>(&params)) {
         std::snprintf(buffer, sizeof(buffer), "%d coeficientes%s", op->coefficients,
                       op->fill ? ", preenchido" : "");

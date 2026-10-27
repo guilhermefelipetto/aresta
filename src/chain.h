@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "convolve.h"
+#include "cooccurrence.h"
 #include "geometry.h"
 #include "metrics.h"
 #include "fft.h"
@@ -136,6 +137,18 @@ struct FourierOp {
     int coefficients = 16;
     bool fill = false;
 };
+// Uma medida de Haralick por pixel, na janela em volta dele. A faixa que vira
+// níveis é a do próprio mapa, a não ser que a pessoa prenda em 0 a 1, que é o
+// que deixa comparar a textura de duas imagens diferentes.
+struct TextureOp {
+    Haralick measure = Haralick::Contrast;
+    Direction direction = Direction::Right;
+    int distance = 1;
+    int levels = 16;
+    int radius = 7;
+    bool symmetric = true;
+    bool unit_range = false;
+};
 struct MinimaOp {
     float h = 0.0f;
     bool h_absolute = false;
@@ -253,7 +266,7 @@ using OpParams = std::variant<SourceOp, ExposureOp, ContrastOp, GammaOp, InvertO
                               ReconstructOp, FillHolesOp, ThinOp, HitMissOp, CannyOp,
                               LogEdgeOp, AdaptiveThresholdOp, MultiOtsuOp,
                               HoughAccumulatorOp, HoughLinesOp, HoughCirclesOp, WatershedOp,
-                              MinimaOp, FourierOp,
+                              MinimaOp, FourierOp, TextureOp,
                               ResizeOp, RotateOp, CropOp, FlipOp, QuantizeOp,
                               MetricsOp>;
 

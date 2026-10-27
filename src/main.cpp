@@ -23,6 +23,7 @@
 #include "chain.h"
 #include "chain_panel.h"
 #include "components_window.h"
+#include "cooccurrence_window.h"
 #include "curve_window.h"
 #include "dialog.h"
 #include "export_window.h"
@@ -90,6 +91,7 @@ int main(int argc, char** argv) {
     HistogramWindow histogram_window;
     CurveWindow curve_window;
     ComponentsWindow components_window;
+    CooccurrenceWindow cooccurrence_window;
     ExportWindow export_window;
     SheetWindow sheet_window;
 
@@ -130,6 +132,7 @@ int main(int argc, char** argv) {
         components_window.editing = -1;
         histogram_window.seen_revision = -1;
         components_window.seen_revision = -1;
+        cooccurrence_window.seen_revision = -1;
         sheet_window.items.clear();
     };
 
@@ -331,6 +334,7 @@ int main(int argc, char** argv) {
                 ImGui::MenuItem("Histograma...", nullptr, &histogram_window.open);
                 ImGui::MenuItem("Curva...", nullptr, &curve_window.open);
                 ImGui::MenuItem("Componentes...", nullptr, &components_window.open);
+                ImGui::MenuItem("Co-ocorrência...", nullptr, &cooccurrence_window.open);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Janela")) {
@@ -723,6 +727,7 @@ int main(int argc, char** argv) {
         draw_histogram_window(histogram_window, app);
         draw_curve_window(curve_window, app);
         draw_components_window(components_window, app);
+        draw_cooccurrence_window(cooccurrence_window, app);
         draw_export_window(export_window, app);
         draw_sheet_window(sheet_window, app);
 

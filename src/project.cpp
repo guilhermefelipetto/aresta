@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iterator>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -66,6 +67,7 @@ namespace {
     X(WatershedOp, "watershed")                   \
     X(MinimaOp, "minimos-regionais")              \
     X(FourierOp, "contorno-fourier")              \
+    X(TextureOp, "textura")                       \
     X(ResizeOp, "redimensionar")                  \
     X(RotateOp, "girar")                          \
     X(CropOp, "recortar")                         \
@@ -106,6 +108,12 @@ constexpr const char* kColormap[] = {"cinza", "viridis", "magma", "turbo", "hot"
 constexpr const char* kBorder[] = {"zero", "estender", "espelhar", "circular"};
 constexpr const char* kConvPath[] = {"auto", "espacial", "frequencia"};
 constexpr const char* kMetricMap[] = {"erro-abs", "erro-quadrado", "ssim"};
+constexpr const char* kDirection[] = {"direita", "abaixo", "diagonal-descendo",
+                                      "diagonal-subindo", "media"};
+constexpr const char* kHaralick[] = {"contraste",    "dissimilaridade", "homogeneidade",
+                                     "uniformidade", "energia",         "correlacao",
+                                     "entropia",     "probabilidade-maxima"};
+static_assert(std::size(kHaralick) == haralick_count, "medida de Haralick nova sem nome no projeto");
 
 std::string sem_espaco(std::string texto) {
     std::size_t inicio = texto.find_first_not_of(" \t\r\n");
@@ -436,6 +444,15 @@ template <class V> void campos(HoughCirclesOp& op, V& v) {
 template <class V> void campos(WatershedOp& op, V& v) {
     v.campo("raio", op.radius);
     v.campo("linhas", op.lines);
+}
+template <class V> void campos(TextureOp& op, V& v) {
+    v.enumeracao("medida", op.measure, kHaralick);
+    v.enumeracao("direcao", op.direction, kDirection);
+    v.campo("distancia", op.distance);
+    v.campo("niveis", op.levels);
+    v.campo("raio", op.radius);
+    v.campo("simetrica", op.symmetric);
+    v.campo("faixa-0-1", op.unit_range);
 }
 template <class V> void campos(FourierOp& op, V& v) {
     v.campo("coeficientes", op.coefficients);
